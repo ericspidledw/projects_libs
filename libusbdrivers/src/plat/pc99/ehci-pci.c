@@ -69,7 +69,7 @@ static uintptr_t ehci_pci_init(uint16_t vid, uint16_t did,
 	if (dev) {
 		libpci_read_ioconfig(&dev->cfg, dev->bus, dev->dev, dev->fun);
 		/* Map device memory */
-		cap_regs = (volatile struct echi_host_cap*)MAP_DEVICE(io_ops,
+		cap_regs = MAP_DEVICE(io_ops,
 				dev->cfg.base_addr[0],
 				dev->cfg.base_addr_size[0]);
 		if (!cap_regs) {

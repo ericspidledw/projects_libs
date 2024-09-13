@@ -897,7 +897,7 @@ void usbdev_disconnect(usb_dev_t *udev)
 	hdev = &udev->host->hdev;
 	if (udev->disconnect) {
 		ZF_LOGD("USB %d: calling device disconnect 0x%x\n",
-		       udev->addr, (uint32_t) udev->disconnect);
+		       udev->addr, (uint64_t) udev->disconnect);
 		udev->disconnect(udev);
 	}
 

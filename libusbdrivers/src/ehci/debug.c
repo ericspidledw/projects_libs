@@ -27,7 +27,7 @@ void dump_qtd(volatile struct TD *qtd)
 	uint32_t tok;
 	const char *col = dump_colour(qtd_get_status(qtd));
 	printf("%s", col);
-	printf("-- td 0x%08x\n", (uint32_t) qtd);
+	printf("-- td 0x%08x\n", (uint64_t) qtd);
 	printf("%s", col);
 	printf("-    next: 0x%08x | 0x%08x (%s)\n",
 	       qtd->next, qtd->next & ~0x1f,
@@ -99,7 +99,7 @@ void dump_qhn(struct QHn *qhn)
 	col = dump_colour(qhn_get_status(qhn));
 	qh = qhn->qh;
 	printf("%s", col);
-	printf("++ qh 0x%08x(0x%08x)\n", (uint32_t) qh, (uint32_t) qhn->pqh);
+	printf("++ qh 0x%08x(0x%08x)\n", (uint64_t) qh, (uint64_t) qhn->pqh);
 	printf("%s", col);
 	printf("+ link: 0x%08x | 0x%08x (%s|",
 	       qh->qhlptr, qh->qhlptr & ~0xf,
