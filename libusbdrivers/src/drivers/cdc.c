@@ -220,7 +220,7 @@ int usb_cdc_bind(usb_dev_t *udev)
 		return -1;
 	}
 
-	err = circ_buf_new(buf, CDC_READ_BUFFER_SIZE, &cdc->read_buf);
+	err = circ_buf_init(CDC_READ_BUFFER_SIZE, &cdc->read_buf);
 	if (err) {
 		ZF_LOGD("Failed to allocate circular buffer!\n");
 		usb_free(buf);
@@ -231,7 +231,8 @@ int usb_cdc_bind(usb_dev_t *udev)
 	class = usbdev_get_class(udev);
 	if (class != USB_CLASS_CDCDATA && class != USB_CLASS_COMM) {
 		ZF_LOGD("Not a CDC device(%d)\n", class);
-		circ_buf_free(&cdc->read_buf);
+		free(&cdc->read_buf);
+		// circ_buf_free(&cdc->read_buf);
 		usb_free(buf);
 		usb_free(cdc);
 		return -1;

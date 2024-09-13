@@ -5,6 +5,7 @@
  */
 #include <platsupport/io.h>
 #include <pci/pci.h>
+#include <pci/ioreg.h>
 
 #include <usb/usb_host.h>
 #include "../../ehci/ehci.h"
@@ -13,7 +14,7 @@
 #define USBLEGSUP            0x0
 #define USBLEGSUP_OS         BIT(24)
 #define USBLEGSUP_BIOS       BIT(16)
-#define USBLEGSUP_NEXT_SHF   BIT(8)
+#define USBLEGSUP_NEXT_SHF   8
 #define USBLEGSUP_NEXT_MASK  0xFF 
 #define USBLEGSUP_ID_SHF     BIT(0)
 #define USBLEGSUP_ID_MASK    0xFF
@@ -92,7 +93,7 @@ static uintptr_t ehci_pci_init(uint16_t vid, uint16_t did,
 					dev->fun, reg);
 		} while (val & USBLEGSUP_BIOS);
 
-		if ((val >> USBLEGSUP_NEXT_SHF) & USBLEGSUP_NEXT_MASK) {
+		if ((val >> USBLEGSUP_NEXT_SHF) & USBLEGSUP_NEXT_MASK) { // bro what why are we shifting a 32 int 256??? guessing meant to shift
 			ZF_LOGW("EHCI: Warning! More Capability Registers.\n");
 		}
 	}
