@@ -41,9 +41,9 @@
 
 /* Host vendor ID and device ID */
 #define USB_HOST1_VID    0x8086
-#define USB_HOST1_DID    0x1E26
+#define USB_HOST1_DID    0x3b3c
 #define USB_HOST2_VID    0x8086
-#define USB_HOST2_DID    0x1E2D
+#define USB_HOST2_DID    0x3b42
 
 /*
  * TODO: Should get these numbers from IOAPIC tables. Remove them once we have a
