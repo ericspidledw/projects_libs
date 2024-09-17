@@ -10,8 +10,7 @@
 #include <stdlib.h>
 #include <usb/usb_host.h>
 #include <utils/ansi.h>
-#include <utils/util.h>
-#include <utils/zf_log.h>
+// #include <utils/util.h>
 
 void otg_irq(void);
 

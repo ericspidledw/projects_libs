@@ -40,6 +40,7 @@
 #define USBLEGCTLSTS_SIM_EN        BIT(0)
 
 /* Host vendor ID and device ID */
+/* Host vendor ID and device ID */
 #define USB_HOST1_VID    0x8086
 #define USB_HOST1_DID    0x3b3c
 #define USB_HOST2_VID    0x8086
@@ -67,7 +68,15 @@ static uintptr_t ehci_pci_init(uint16_t vid, uint16_t did,
 	libpci_scan(io_ops->io_port_ops);
 	dev = libpci_find_device(vid, did);
 	if (dev) {
+		// printf("Cfg is %d, bus is %d, fun is %d\n", dev->cfg, );
+		printf("pre io read\n");
+		printf("using cfg we get io cfg baseaddr of %p\n",libpci_device_iocfg_get_baseaddr(&dev->cfg, 0));
+		printf("base addr is %p with size %ld\n", dev->cfg.base_addr[0], dev->cfg.base_addr_size[0]);
+		libpci_device_iocfg_debug_print(&dev->cfg, false);
 		libpci_read_ioconfig(&dev->cfg, dev->bus, dev->dev, dev->fun);
+		printf("post io read\n");
+		printf("using cfg we get io cfg baseaddr of %p\n",libpci_device_iocfg_get_baseaddr(&dev->cfg, 0));
+		printf("base addr is %p with size %ld\n", dev->cfg.base_addr[0], dev->cfg.base_addr_size[0]);
 		/* Map device memory */
 		cap_regs = MAP_DEVICE(io_ops,
 				dev->cfg.base_addr[0],
