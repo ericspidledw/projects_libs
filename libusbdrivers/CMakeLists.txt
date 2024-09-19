@@ -20,13 +20,14 @@ if(LibUSB)
             src/drivers/*.c
             src/drivers/arch/${KernelArch}/*.c
             src/ehci/*.c
+            src/xhci/*.c
             src/plat/${KernelPlatform}/*.c
     )
 
     list(SORT deps)
 
     add_library(usbdrivers STATIC EXCLUDE_FROM_ALL ${deps})
-    target_include_directories(usbdrivers PUBLIC include plat_include/${KernelPlatform} include/usb)
+    target_include_directories(usbdrivers PUBLIC include plat_include/${KernelPlatform} src/ehci/include src/xhci/include include/usb)
     target_link_libraries(usbdrivers sel4 sel4dma sel4allocman muslc platsupport pci sel4simple usbdrivers_Config lwip_Config)
     if(LibLwip)
         target_link_libraries(usbdrivers lwip)
