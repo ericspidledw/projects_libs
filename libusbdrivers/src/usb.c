@@ -14,10 +14,27 @@
 #include <string.h>
 #include <utils/util.h>
 #include <utils/sglib.h>
+#include <usb/usb_host.h>
+#include <usb/plat/usb.h>
+#include <ehci.h>
+#include <xhci.h>
 
 #define NUM_DEVICES 32
 
 #define CLASS_RESERVED_STR "<Reserved>"
+
+
+/* Host vendor ID and device ID */
+/* Host vendor ID and device ID */
+#define USB_HOST1_VID    0x8086
+#define USB_HOST1_DID    0x3b3c
+#define USB_HOST2_VID    0x8086
+#define USB_HOST2_DID    0x3b42
+
+
+/*Host vendor ID and device IDs' (XHCI)*/
+#define XHCI_USB_VID 0x8086
+#define XHCI_USB_DID 0xa36d
 
 const char *usb_class_get_description(enum usb_class usb_class)
 {
@@ -767,6 +784,92 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 	usb_destroy_xact(udev->dman, xact, sizeof(xact) / sizeof(*xact));
 
 	return 0;
+}
+
+static uintptr_t host_controller_pci_init(uint16_t vid, uint16_t did, ps_io_ops_t* io_ops,
+	enum usb_controller_type type)
+{
+	if(type == EHCI){
+		return ehci_pci_init(vid, did, io_ops);
+	}
+	else if(type == XHCI){
+		return xhci_pci_init(vid, did, io_ops);
+	}
+	else{
+		ZF_LOGF("Unsupported USB Controller type");
+	}
+}
+
+static int host_controller_init(usb_host_t* hdev, uintptr_t usb_regs, enum usb_controller_type type,
+ps_dma_man_t* dma_man)
+{
+	const char* type_str = (type == EHCI) ? "EHCI" : "XHCI";
+	printf("Host controller type is %s\n", type_str);
+	if(type == EHCI)
+	{
+		ehci_host_init(hdev, usb_regs, NULL);
+	}
+	else if (type == XHCI)
+	{
+		xhci_host_init(hdev, usb_regs, NULL, dma_man);
+	}
+	else{
+		ZF_LOGF("Unsupported host controller type\n");
+	}
+}
+
+int usb_host_init(enum usb_host_id id, ps_io_ops_t* io_ops, ps_mutex_ops_t *sync,
+		usb_host_t* hdev)
+{
+	int err;
+	uint16_t vid, did;
+	uintptr_t usb_regs;
+	enum usb_controller_type type;
+
+
+	if (id < 0 || id > USB_NHOSTS) {
+		return -1;
+	}
+
+	if (!io_ops || !hdev) {
+		ZF_LOGF("Invalid arguments\n");
+	}
+
+	hdev->id = id;
+	hdev->dman = &io_ops->dma_manager;
+	hdev->sync = sync;
+
+	switch (id) {
+		case USB_HOST1:
+			vid = USB_HOST1_VID;
+			did = USB_HOST1_DID;
+			type = EHCI;
+			break;
+		case USB_HOST2:
+			vid = USB_HOST2_VID;
+			did = USB_HOST2_DID;
+			type = EHCI;
+			break;
+		case USB_XHCI1:
+			ZF_LOGE("Selected XHCI USB");
+			vid = XHCI_USB_VID;
+			did = XHCI_USB_DID;
+			type = XHCI;
+			break;
+		default:
+			ZF_LOGF("Invalid host\n");
+			break;
+	}
+
+	/* Check device mappings */
+	usb_regs = host_controller_pci_init(vid, did, io_ops, type);
+	if (!usb_regs) {
+		return -1;
+	}
+
+	err = host_controller_init(hdev, usb_regs, type, &io_ops->dma_manager);
+
+	return err;
 }
 
 /****************************

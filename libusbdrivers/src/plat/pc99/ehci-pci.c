@@ -8,7 +8,7 @@
 #include <pci/ioreg.h>
 
 #include <usb/usb_host.h>
-#include "../../ehci/ehci.h"
+#include <ehci.h>
 #include "../../services.h"
 
 #define USBLEGSUP            0x0
@@ -39,13 +39,6 @@
 #define USBLEGCTLSTS_ERR_EN        BIT(1)
 #define USBLEGCTLSTS_SIM_EN        BIT(0)
 
-/* Host vendor ID and device ID */
-/* Host vendor ID and device ID */
-#define USB_HOST1_VID    0x8086
-#define USB_HOST1_DID    0x3b3c
-#define USB_HOST2_VID    0x8086
-#define USB_HOST2_DID    0x3b42
-
 /*
  * TODO: Should get these numbers from IOAPIC tables. Remove them once we have a
  * proper parser for the IOAPIC tables.
@@ -55,7 +48,7 @@
 
 static int _irq_line;
 
-static uintptr_t ehci_pci_init(uint16_t vid, uint16_t did,
+uintptr_t ehci_pci_init(uint16_t vid, uint16_t did,
 		ps_io_ops_t *io_ops)
 {
 	int err;
@@ -68,19 +61,12 @@ static uintptr_t ehci_pci_init(uint16_t vid, uint16_t did,
 	libpci_scan(io_ops->io_port_ops);
 	dev = libpci_find_device(vid, did);
 	if (dev) {
-		// printf("Cfg is %d, bus is %d, fun is %d\n", dev->cfg, );
-		printf("pre io read\n");
-		printf("using cfg we get io cfg baseaddr of %p\n",libpci_device_iocfg_get_baseaddr(&dev->cfg, 0));
-		printf("base addr is %p with size %ld\n", dev->cfg.base_addr[0], dev->cfg.base_addr_size[0]);
 		libpci_device_iocfg_debug_print(&dev->cfg, false);
 		libpci_read_ioconfig(&dev->cfg, dev->bus, dev->dev, dev->fun);
-		printf("post io read\n");
-		printf("using cfg we get io cfg baseaddr of %p\n",libpci_device_iocfg_get_baseaddr(&dev->cfg, 0));
-		printf("base addr is %p with size %ld\n", dev->cfg.base_addr[0], dev->cfg.base_addr_size[0]);
 		/* Map device memory */
 		cap_regs = MAP_DEVICE(io_ops,
 				dev->cfg.base_addr[0],
-				dev->cfg.base_addr_size[0]);
+				dev->cfg.base_addr_size[0]); // here we map in the controller registers
 		if (!cap_regs) {
 			ZF_LOGF("Invalid Registers\n");
 		}
@@ -110,50 +96,6 @@ static uintptr_t ehci_pci_init(uint16_t vid, uint16_t did,
 	return (uintptr_t)cap_regs;
 }
 
-int
-usb_host_init(enum usb_host_id id, ps_io_ops_t* io_ops, ps_mutex_ops_t *sync,
-		usb_host_t* hdev)
-{
-	int err;
-	uint16_t vid, did;
-	uintptr_t usb_regs;
-
-	if (id < 0 || id > USB_NHOSTS) {
-		return -1;
-	}
-	
-	if (!io_ops || !hdev) {
-		ZF_LOGF("Invalid arguments\n");
-	}
-
-	hdev->id = id;
-	hdev->dman = &io_ops->dma_manager;
-	hdev->sync = sync;
-
-	switch (id) {
-		case USB_HOST1:
-			vid = USB_HOST1_VID;
-			did = USB_HOST1_DID;
-			break;
-		case USB_HOST2:
-			vid = USB_HOST2_VID;
-			did = USB_HOST2_DID;
-			break;
-		default:
-			ZF_LOGF("Invalid host\n");
-			break;
-	}
-
-	/* Check device mappings */
-	usb_regs = ehci_pci_init(vid, did, io_ops);
-	if (!usb_regs) {
-		return -1;
-	}
-
-	err = ehci_host_init(hdev, usb_regs, NULL);
-
-	return err;
-}
 
 const int*
 usb_host_irqs(usb_host_t* host, int* nirqs)

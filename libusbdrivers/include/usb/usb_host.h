@@ -209,5 +209,13 @@ int usb_host_init(enum usb_host_id id, ps_io_ops_t* ioops, ps_mutex_ops_t *sync,
 const int* usb_host_irqs(usb_host_t* host, int* nirqs);
 
 
+
+uintptr_t ehci_pci_init(uint16_t vid, uint16_t did,
+		ps_io_ops_t *io_ops);
+
+uintptr_t xhci_pci_init(uint16_t vid, uint16_t did,
+		ps_io_ops_t *io_ops);
+
+
 #endif /* __USB_USB_HOST_H_ */
 

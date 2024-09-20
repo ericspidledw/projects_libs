@@ -17,15 +17,23 @@
 #define _XHCI_XHCI_H_
 
 #include <usb/usb_host.h>
-#include <usb/drivers/usbhub.h>
+#include <xhci_usb.h>
+#include <usb_defs.h>
+#include <usb.h>
+#include "../../services.h"
 
-#include <iommu.h>
-#include <phys2bus.h>
-#include <asm/types.h>
-#include <asm/cache.h>
-#include <asm/io.h>
-#include <linux/list.h>
-#include <linux/compat.h>
+
+// #include <usb/drivers/usbhub.h>
+
+// #include <iommu.h>
+// #include <phys2bus.h>
+// #include <asm/types.h>
+// #include <asm/cache.h>
+// #include <asm/io.h>
+// #include <linux/list.h>
+// #include <linux/compat.h>
+
+
 
 #define MAX_EP_CTX_NUM		31
 #define XHCI_ALIGNMENT		64
@@ -80,7 +88,45 @@
  */
 #define XHCI_PORT_RZ ((1 << 2) | (1 << 24) | (0xf << 28))
 
-typedef uint32_t u32;
+#define USB_MAXCHILDREN                        8       /* This is arbitrary */
+#define ARCH_DMA_MINALIGN						32 // for now
+
+typedef uint32_t 	u32;
+typedef uint32_t 	__u32;
+typedef uint32_t 	__le32;
+typedef uint64_t 	__le64;
+typedef uint8_t 	u8;
+typedef uint8_t 	__u8;
+typedef uint64_t 	u64;
+typedef  uint64_t  	dma_addr_t;
+typedef uint32_t 	__u32;
+typedef uint16_t	u16;
+typedef uint16_t	__le16;
+typedef
+
+#define NS_TO_US(x)  (x/1000)
+
+#define read_poll_timeout(op, val, cond, sleep_us, timeout_us, args...)	\
+({ \
+	unsigned long timeout = NS_TO_US(timeout_time()) + timeout_us; \
+	for (;;) { \
+		(val) = op(args); \
+		if (cond) \
+			break; \
+		if (NS_TO_US(timeout_time()) >= timeout) { \
+			(val) = op(args); \
+			break; \
+		} \
+		if (sleep_us) \
+			udelay(sleep_us); \
+	} \
+	(cond) ? 0 : -ETIMEDOUT; \
+})
+
+
+#define readx_poll_sleep_timeout(op, addr, val, cond, sleep_us, timeout_us) \
+	read_poll_timeout(op, val, cond, sleep_us, timeout_us, addr)
+
 
 /*
  * XHCI Register Space.
@@ -178,6 +224,117 @@ struct xhci_hcor {
 	volatile uint32_t reserved_2[241];
 	struct xhci_hcor_port_regs portregs[MAX_HC_PORTS];
 };
+
+#define USB_MAXENDPOINTS 16
+
+
+
+struct devrequest {
+	__u8	requesttype;
+	__u8	request;
+	__le16	value;
+	__le16	index;
+	__le16	length;
+} __attribute__ ((packed));
+
+struct usb_interface_descriptor {
+	__u8  bLength;
+	__u8  bDescriptorType;
+
+	__u8  bInterfaceNumber;
+	__u8  bAlternateSetting;
+	__u8  bNumEndpoints;
+	__u8  bInterfaceClass;
+	__u8  bInterfaceSubClass;
+	__u8  bInterfaceProtocol;
+	__u8  iInterface;
+} __attribute__ ((packed));
+
+
+/* USB_DT_ENDPOINT: Endpoint descriptor */
+struct usb_endpoint_descriptor {
+	__u8  bLength;
+	__u8  bDescriptorType;
+
+	__u8  bEndpointAddress;
+	__u8  bmAttributes;
+	__le16 wMaxPacketSize;
+	__u8  bInterval;
+
+	/* NOTE:  these two are _only_ in audio endpoints. */
+	/* use USB_DT_ENDPOINT*_SIZE in bLength, not sizeof. */
+	__u8  bRefresh;
+	__u8  bSynchAddress;
+} __attribute__ ((packed));
+
+struct usb_ss_ep_comp_descriptor {
+	__u8  bLength;
+	__u8  bDescriptorType;
+
+	__u8  bMaxBurst;
+	__u8  bmAttributes;
+	__le16 wBytesPerInterval;
+} __attribute__ ((packed));
+
+struct usb_config_descriptor {
+	__u8  bLength;
+	__u8  bDescriptorType;
+
+	__le16 wTotalLength;
+	__u8  bNumInterfaces;
+	__u8  bConfigurationValue;
+	__u8  iConfiguration;
+	__u8  bmAttributes;
+	__u8  bMaxPower;
+} __attribute__ ((packed));
+
+struct usb_device_descriptor {
+	__u8  bLength;
+	__u8  bDescriptorType;
+
+	__le16 bcdUSB;
+	__u8  bDeviceClass;
+	__u8  bDeviceSubClass;
+	__u8  bDeviceProtocol;
+	__u8  bMaxPacketSize0;
+	__le16 idVendor;
+	__le16 idProduct;
+	__le16 bcdDevice;
+	__u8  iManufacturer;
+	__u8  iProduct;
+	__u8  iSerialNumber;
+	__u8  bNumConfigurations;
+} __attribute__ ((packed));
+
+
+
+/* Interface */
+struct usb_interface {
+	struct usb_interface_descriptor desc;
+
+	__u8	no_of_ep;
+	__u8	num_altsetting;
+	__u8	act_altsetting;
+
+	struct usb_endpoint_descriptor ep_desc[USB_MAXENDPOINTS];
+	/*
+	 * Super Speed Device will have Super Speed Endpoint
+	 * Companion Descriptor  (section 9.6.7 of usb 3.0 spec)
+	 * Revision 1.0 June 6th 2011
+	 */
+	struct usb_ss_ep_comp_descriptor ss_ep_comp_desc[USB_MAXENDPOINTS];
+} __attribute__ ((packed));
+
+
+#define USB_MAXINTERFACES 8
+/* Configuration information.. */
+struct usb_config {
+	struct usb_config_descriptor desc;
+
+	__u8	no_of_if;	/* number of interfaces */
+	struct usb_interface if_desc[USB_MAXINTERFACES];
+} __attribute__ ((packed));
+
 
 /* USBCMD - USB command - command bitmasks */
 /* start/stop HC execution - do not write unless HC is halted*/
@@ -818,6 +975,33 @@ struct xhci_event_cmd {
 	volatile __le32 flags;
 };
 
+
+
+#define readb(addr) \
+	({ unsigned char __v = (*(volatile unsigned char *)(addr)); __v; })
+#define readw(addr) \
+	({ unsigned short __v = (*(volatile unsigned short *)(addr)); __v; })
+#define readl(addr) \
+	({ unsigned int __v = (*(volatile unsigned int *)(addr)); __v; })
+#define writeb(b, addr) (void)((*(volatile unsigned char *)(addr)) = (b))
+#define writew(b, addr) (void)((*(volatile unsigned short *)(addr)) = (b))
+#define writel(b, addr) (void)((*(volatile unsigned int *)(addr)) = (b))
+
+#define __raw_readb readb
+#define __raw_readw readw
+#define __raw_readl readl
+#define __raw_writeb writeb
+#define __raw_writew writew
+#define __raw_writel writel
+
+#define upper_32_bits(n) ((u32)(((n) >> 16) >> 16))
+#define lower_32_bits(n) ((u32)(n))
+
+#define cpu_to_le16(x)  ((uint16_t) x)
+#define cpu_to_le32(x)  ((uint32_t) x)
+#define cpu_to_le64(x)  ((uint64_t) x)
+#define le32_to_cpu(x) 	((uint32_t) x)
+
 /* flags bitmasks */
 /* bits 16:23 are the virtual function ID */
 /* bits 24:31 are the slot ID */
@@ -1210,10 +1394,32 @@ void xhci_hcd_stop(int index);
 /* true: Controller Not Ready to accept doorbell or op reg writes after reset */
 #define XHCI_STS_CNR		(1 << 11)
 
+
+struct usb_hub_descriptor {
+	unsigned char  bLength;
+	unsigned char  bDescriptorType;
+	unsigned char  bNbrPorts;
+	unsigned short wHubCharacteristics;
+	unsigned char  bPwrOn2PwrGood;
+	unsigned char  bHubContrCurrent;
+	/* 2.0 and 3.0 hubs differ here */
+	union {
+		struct {
+			/* add 1 bit for hub status change; round to bytes */
+			__u8 DeviceRemovable[(USB_MAXCHILDREN + 1 + 7) / 8];
+			__u8 PortPowerCtrlMask[(USB_MAXCHILDREN + 1 + 7) / 8];
+		} __attribute__ ((packed)) hs;
+
+		struct {
+			__u8 bHubHdrDecLat;
+			__le16 wHubDelay;
+			__le16 DeviceRemovable;
+		} __attribute__ ((packed)) ss;
+	} u;
+} __attribute__ ((packed));
+
+
 struct xhci_ctrl {
-#if CONFIG_IS_ENABLED(DM_USB)
-	struct udevice *dev;
-#endif
 	struct xhci_hccr *hccr;	/* R/O registers, not need for volatile */
 	struct xhci_hcor *hcor;
 	struct xhci_doorbell_array *dba;
@@ -1234,10 +1440,11 @@ struct xhci_ctrl {
 	u16 hci_version;
 	int page_size;
 	u32 quirks;
+	ps_dma_man_t *dma_man //sel4 dma allocator
 #define XHCI_MTK_HOST		BIT(0)
 };
 
-#if CONFIG_IS_ENABLED(DM_USB)
+#ifdef DM_USB
 #define xhci_to_dev(_ctrl)	_ctrl->dev
 #else
 #define xhci_to_dev(_ctrl)	NULL
@@ -1284,18 +1491,11 @@ int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
  * @dev:	Controller device
  * Return: 0 if registered, -ve on error
  */
-int xhci_deregister(struct udevice *dev);
+int xhci_deregister(struct xhci_ctrl *ctr);
 
-/**
- * xhci_register() - Register a new XHCI controller
- *
- * @dev:	Controller device
- * @hccr:	Host controller control registers
- * @hcor:	Not sure what this means
- * Return: 0 if registered, -ve on error
- */
-int xhci_register(struct udevice *dev, struct xhci_hccr *hccr,
-		  struct xhci_hcor *hcor);
+int xhci_host_init(usb_host_t *hdev, uintptr_t regs,
+	void (*board_pwren) (int port, int state), ps_dma_man_t* dma_man);
+
 
 extern struct dm_usb_ops xhci_usb_ops;
 
@@ -1304,17 +1504,19 @@ struct xhci_ctrl *xhci_get_ctrl(struct usb_device *udev);
 static inline dma_addr_t xhci_dma_map(struct xhci_ctrl *ctrl, void *addr,
 				      size_t size)
 {
-#if CONFIG_IS_ENABLED(IOMMU)
-	return dev_iommu_dma_map(xhci_to_dev(ctrl), addr, size);
-#else
-	return dev_phys_to_bus(xhci_to_dev(ctrl), virt_to_phys(addr));
-#endif
+	ps_dma_alloc_pinned(ctrl->dma_man, size, 32, 0, PS_MEM_NORMAL, addr);
+	// ps_dma_alloc_pinned();
+// #ifdef IOMMU
+// 	return dev_iommu_dma_map(xhci_to_dev(ctrl), addr, size);
+// #else
+// 	return dev_phys_to_bus(xhci_to_dev(ctrl), virt_to_phys(addr));
+// #endif
 }
 
 static inline void xhci_dma_unmap(struct xhci_ctrl *ctrl, dma_addr_t addr,
 				  size_t size)
 {
-#if CONFIG_IS_ENABLED(IOMMU)
+#ifdef IOMMU
 	dev_iommu_dma_unmap(xhci_to_dev(ctrl), addr, size);
 #endif
 }

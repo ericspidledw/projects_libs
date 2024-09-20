@@ -10,8 +10,15 @@
 enum usb_host_id {
     USB_HOST1,
     USB_HOST2,
+    USB_XHCI1,
     USB_NHOSTS,
     USB_HOST_DEFAULT = USB_HOST1
+};
+
+enum usb_controller_type {
+    EHCI,
+    XHCI,
+    DEFAULT= EHCI,
 };
 
 enum usb_otg_id {
