@@ -636,11 +636,32 @@ static void print_transactions(struct xact* xacts, int nxact){
 
 }
 
+static void print_descriptor(struct device_desc* desc){
+	printf(" length is %d\n", desc->bLength);
+	printf(" descriptor type is %d\n", desc->bDescriptorType);
+	printf(" bcdUSB is %u\n", desc->bcdUSB);
+	printf(" Device class is %d\n", desc->bDeviceClass);
+	printf(" Sub class is %d\n", desc->bDeviceSubClass);
+	printf(" Device protocol is %d\n", desc->bDeviceProtocol);
+	printf(" MaxPacketSize is %d\n", desc->bMaxPacketSize0);
+	printf(" Id Vendor is %d\n", desc->idVendor);
+	printf(" Id Product is %d\n", desc->idProduct);
+	printf(" BCD Device is %d\n", desc->bcdDevice);
+	printf(" iManufacturer is %d\n", desc->iManufacturer);
+	printf(" iProduct is %d\n", desc->iProduct);
+	printf(" iSerialNumber is %d\n", desc->iSerialNumber);
+	printf("num configs is %d\n", desc->bNumConfigurations);
+
+}
 
 static int create_xhci_driver_device(struct usb_dev* udev, struct usb_device* xhci_dev){
+	assert(udev != NULL);
+	assert(xhci_dev != NULL);
+	assert(udev->ctrl);
 	xhci_dev->ctrl = udev->ctrl;
-	xhci_dev->speed = udev->speed;
-	ZF_LOGE("checking rootdev it is %d", xhci_dev->ctrl->rootdev);
+	xhci_dev->speed = USB_SPEED_HIGH;
+	// ZF_LOGE("checking rootdev it is %d", xhci_dev->ctrl->rootdev);
+	ZF_LOGE("leaving crate device driver");
 	return xhci_alloc_device(NULL, xhci_dev);
 }
 
@@ -684,11 +705,16 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 	udev->speed = speed;
 	udev->host = host;
 	udev->dman = host->hdev.dman;
-	// udev->ctrl = host->hdev.ctrl;
+	// host->hdev.drv_dev = xhci_dev;
+	udev->ctrl = host->hdev.ctrl;
 
 	ZF_LOGE("Entering create driver deivce");
-	create_xhci_driver_device(udev, host->hdev.drv_dev);
+	create_xhci_driver_device(udev, xhci_dev);
+	ZF_LOGE("Leaving the xhci create device");
 
+	host->hdev.drv_dev = (struct usb_device*) usb_malloc(sizeof(*xhci_dev));
+	assert(host->hdev.drv_dev);
+	host->hdev.drv_dev = xhci_dev;
 	/*
 	 * Work out the TT hub for full/low speed devices.
 	 * Assuming all high speed hubs have TT.
@@ -785,8 +811,12 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 
 	udev->ep_ctrl->max_pkt = d_desc->bMaxPacketSize0;
 
+
 	/* Find the next available address */
 	printf("Find the next available addr for devlist insert\n");
+	print_descriptor(d_desc);
+	printf("We got the descriptors pausing execution now....\n");
+	while(1);
 	addr = devlist_insert(udev);
 	if (addr < 0) {
 		ZF_LOGE("USB: Too many devices\n");
@@ -930,8 +960,8 @@ int usb_host_init(enum usb_host_id id, ps_io_ops_t* io_ops, ps_mutex_ops_t *sync
 		return -1;
 	}
 
-	hdev->ctrl = (struct xhci_ctrl*) usb_regs;
 	err = host_controller_init(hdev, usb_regs, type);
+	ZF_LOGE("hdev->ctrl ring buffer is %p", hdev->ctrl->cmd_ring);
 
 	printf("All done with USB controller initialization\n");
 	return err;

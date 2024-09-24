@@ -23,9 +23,12 @@
 // // #include <asm/cache.h>
 // // #include <linux/bug.h>
 // // #include <linux/errno.h>
+#include <stddef.h>
+
+// #define xhci_malloc(ctrl, size)  ps_dma_alloc()
 
 
-#define xhci_malloc(size)  usb_malloc(size)
+
 
 #include <xhci.h>
 #include <string.h>
@@ -286,11 +289,22 @@ static void xhci_initialize_ring_info(struct xhci_ring *ring)
 //  */
 static struct xhci_segment* xhci_segment_alloc(struct xhci_ctrl *ctrl)
 {
-	struct xhci_segment *seg;
+	struct xhci_segment *seg; // this is our first segment
 
-	seg = malloc(sizeof(struct xhci_segment));
-	// = xhci_malloc(SEGMENT_SIZE);
-	seg->trbs = xhci_dma_map(ctrl, &seg->dma, SEGMENT_SIZE);
+	// ring->enqueue = ring->first_seg->trbs; // enqueu becomes the first segments' transfer request blocks...
+	// ring->enq_seg = ring->first_seg;
+	// ring->dequeue = ring->enqueue;
+	// ring->deq_seg = ring->first_seg;
+
+
+
+	seg = usb_malloc(sizeof(struct xhci_segment));
+	printf("seg is %p\n", seg);
+	assert(seg);
+	seg->trbs = xhci_malloc(ctrl, SEGMENT_SIZE);
+	seg->dma = (dma_addr_t) xhci_dma_map(ctrl,  seg->trbs, SEGMENT_SIZE);
+	ZF_LOGE("Segment dma has %p and trb has %p", seg->dma, seg->trbs);
+	// seg->trbs = xhci_dma_map(ctrl, &seg->dma, SEGMENT_SIZE);
 
 	seg->next = NULL;
 
@@ -319,11 +333,12 @@ struct xhci_ring *xhci_ring_alloc(struct xhci_ctrl *ctrl, unsigned int num_segs,
 	struct xhci_segment *prev;
 
 	ring = malloc(sizeof(struct xhci_ring));
+	ZF_LOGE("the ring is at addr %p", ring);
 
 	if (num_segs == 0)
 		return ring;
 
-	ring->first_seg = xhci_segment_alloc(ctrl);
+	ring->first_seg = xhci_segment_alloc(ctrl); // allocate the first segment
 
 	num_segs--;
 
@@ -375,14 +390,15 @@ static int xhci_scratchpad_alloc(struct xhci_ctrl *ctrl)
 		goto fail_sp;
 	ctrl->scratchpad = scratchpad;
 
-	scratchpad->sp_array = xhci_malloc(num_sp * sizeof(u64));
+	scratchpad->sp_array = xhci_malloc(ctrl, num_sp * sizeof(u64));
 	if (!scratchpad->sp_array)
 		goto fail_sp2;
 
- scratchpad->sp_array = (struct xhci_scratchpad *)xhci_dma_map(ctrl, &val_64,
+
+//  scratchpad->sp_array = (struct xhci_scratchpad *)xhci_dma_map(ctrl, &val_64,
+// 			      num_sp * sizeof(u64));
+	val_64 = xhci_dma_map(ctrl,  scratchpad->sp_array,
 			      num_sp * sizeof(u64));
-	// val_64 = xhci_dma_map(ctrl, scratchpad->sp_array,
-	// 		      num_sp * sizeof(u64));
 	ctrl->dcbaa->dev_context_ptrs[0] = cpu_to_le64(val_64);
 
 	// xhci_flush_cache((uintptr_t)&ctrl->dcbaa->dev_context_ptrs[0],
@@ -403,7 +419,8 @@ static int xhci_scratchpad_alloc(struct xhci_ctrl *ctrl)
 	// xhci_flush_cache((uintptr_t)buf, num_sp * ctrl->page_size);
 
 	scratchpad->scratchpad = buf;
-	buf = xhci_dma_map(ctrl, &val_64 , num_sp * ctrl->page_size);
+	val_64 = xhci_dma_map(ctrl, &buf, num_sp * ctrl->page_size);
+	// buf = xhci_dma_map(ctrl, &val_64 , num_sp * ctrl->page_size);
 	for (i = 0; i < num_sp; i++) {
 		scratchpad->sp_array[i] = cpu_to_le64(val_64);
 		val_64 += ctrl->page_size;
@@ -445,7 +462,7 @@ static struct xhci_container_ctx
 	if (type == XHCI_CTX_TYPE_INPUT)
 		ctx->size += CTX_SIZE(xhci_readl(&ctrl->hccr->cr_hccparams));
 
-	ctx->bytes = xhci_malloc(ctx->size);
+	ctx->bytes = xhci_malloc(ctrl, ctx->size);
 	ctx->dma = xhci_dma_map(ctrl, ctx->bytes, ctx->size);
 
 	return ctx;
@@ -528,21 +545,23 @@ int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
 
 	/* DCBAA initialization */
 	// ctrl->dcbaa = xhci_malloc(sizeof(struct xhci_device_context_array)); // do I need cache ops?
-	ctrl->dcbaa = xhci_malloc(sizeof(struct xhci_device_context_array));
+	ctrl->dcbaa = xhci_malloc(ctrl, sizeof(struct xhci_device_context_array));
 	if (ctrl->dcbaa == NULL) {
 		puts("unable to allocate DCBA\n");
 		return -ENOMEM;
 	}
 
-	ctrl->dcbaa = (struct xhci_device_context_array*) xhci_dma_map(ctrl, &ctrl->dcbaa->dma,
+	ZF_LOGE("init dcbaa dma");
+	ctrl->dcbaa->dma = (dma_addr_t) xhci_dma_map(ctrl, ctrl->dcbaa,
 				sizeof(struct xhci_device_context_array));
-
+	ZF_LOGE("done init dcbaa dma");
 
 	/* Set the pointer in DCBAA register */
 	xhci_writeq(&hcor->or_dcbaap, ctrl->dcbaa->dma);
 
 	/* Command ring control pointer register initialization */
-	ctrl->cmd_ring = xhci_ring_alloc(ctrl, 1, true);
+	ctrl->cmd_ring = xhci_ring_alloc(ctrl, 1, true); // allocates the command ring...
+	ZF_LOGE("Command ring is %p", ctrl->cmd_ring);
 
 	/* Set the address in the Command Ring Control register */
 	trb_64 = ctrl->cmd_ring->first_seg->dma;
@@ -567,10 +586,13 @@ int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
 
 	/* Event ring does not maintain link TRB */
 	ctrl->event_ring = xhci_ring_alloc(ctrl, ERST_NUM_SEGS, false);
-	ctrl->erst.entries = xhci_malloc(sizeof(struct xhci_erst_entry) *
+	ctrl->erst.entries = xhci_malloc(ctrl, sizeof(struct xhci_erst_entry) *
 					 ERST_NUM_SEGS);
-	ctrl->erst.entries = (struct xhci_erst_entry*) xhci_dma_map(ctrl, &ctrl->erst.erst_dma_addr,
+	ZF_LOGE("address of entries is %p", ctrl->erst.entries);
+	ctrl->erst.erst_dma_addr = (dma_addr_t) xhci_dma_map(ctrl, ctrl->erst.entries,
 			sizeof(struct xhci_erst_entry) * ERST_NUM_SEGS);
+	// ctrl->erst.entries = (struct xhci_erst_entry*) xhci_dma_map(ctrl, &ctrl->erst.erst_dma_addr,
+	// 		sizeof(struct xhci_erst_entry) * ERST_NUM_SEGS);
 
 	ctrl->erst.num_entries = ERST_NUM_SEGS;
 

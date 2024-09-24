@@ -43,16 +43,16 @@ uintptr_t xhci_pci_init(uint16_t vid, uint16_t did, ps_io_ops_t *io_ops)
 	libpci_scan(io_ops->io_port_ops);
 	controller_dev = libpci_find_device(vid, did);
 	if (controller_dev) {
-		libpci_device_iocfg_debug_print(&controller_dev->cfg, false);
+		// libpci_device_iocfg_debug_print(&controller_dev->cfg, false);
 		libpci_read_ioconfig(&controller_dev->cfg, controller_dev->bus,
 			controller_dev->dev, controller_dev->fun);
 		/* Map device memory */
-		printf("Mapping in XHCI Dev at %p with size of %zu\n",
-			controller_dev->cfg.base_addr[0], controller_dev->cfg.base_addr_size[0]);
+		// printf("Mapping in XHCI Dev at %p with size of %zu\n",
+		// 	controller_dev->cfg.base_addr[0], controller_dev->cfg.base_addr_size[0]);
 		cap_regs = MAP_DEVICE(io_ops,
 				controller_dev->cfg.base_addr[0],
 				controller_dev->cfg.base_addr_size[0]); // here we map in the controller registers
-		printf("Cap regs is %p\n", cap_regs);
+		// printf("Cap regs is %p\n", cap_regs);
 		if (!cap_regs) {
 			ZF_LOGF("Invalid Registers\n");
 		}

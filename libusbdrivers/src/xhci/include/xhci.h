@@ -23,6 +23,7 @@
 #include <usb.h>
 #include "../../services.h"
 #include <string.h>
+#include <stddef.h>
 
 
 
@@ -1717,6 +1718,7 @@ void udelay(uint64_t us);
 uint64_t timeout_time();
 
 
+
 #define USB_TYPE_MASK                        (0x03 << 5)
 
 
@@ -1737,19 +1739,44 @@ extern struct dm_usb_ops xhci_usb_ops;
 struct xhci_ctrl *xhci_get_ctrl(struct usb_device *udev);
 
 
+	//this returns our physical address and passes in our vaddr
+	// ctrl->dcbaa->dma = xhci_dma_map(ctrl, ctrl->dcbaa,
+	// 			sizeof(struct xhci_device_context_array)); // map in our dcbaa address to the dma?
+
+	//	ctrl->dcbaa = (struct xhci_device_context_array*) xhci_dma_map(ctrl, &ctrl->dcbaa->dma,
+	//			sizeof(struct xhci_device_context_array));
+
 //the driver expects us to return the phys addr and put the vaddr in the passed in var
 // can we do that?
-static inline void* xhci_dma_map(struct xhci_ctrl *ctrl, uintptr_t* addr,
+static inline dma_addr_t xhci_dma_map(struct xhci_ctrl *ctrl, void* addr,
 				      size_t size)
 {
-	printf("mapping in addr %p\n", addr);
-	ps_dma_alloc_pinned(ctrl->dma_man, size, 32, 0, PS_MEM_NORMAL, addr);
+
+
+	ZF_LOGE("Pinning address %p", addr);
+	dma_addr_t paddr = (dma_addr_t) ps_dma_pin(ctrl->dma_man, addr, size);
+	printf("Paddr is %p\n", paddr);
+
+	// uintptr_t* vaddr = ps_dma_alloc_pinned(ctrl->dma_man, size, 32, 0, PS_MEM_NORMAL, (uintptr_t*)&addr);
+	// dma_addr_t paddr = (dma_addr_t) addr;
+	// *(uintptr_t *) addr = vaddr;
+	// printf("Returning the vaddr %p and paddr %p\n", vaddr, paddr);
+	return paddr;
+
+}
+
+static void* xhci_malloc(struct xhci_ctrl* ctrl, size_t size)
+{
+	void* addr =  ps_dma_alloc(ctrl->dma_man, size, 32, 0, PS_MEM_NORMAL); // 32 align for now
+	ZF_LOGE("malloc returning buffer %p", addr);
 	return addr;
 }
+
 
 static inline void xhci_dma_unmap(struct xhci_ctrl *ctrl, dma_addr_t addr,
 				  size_t size)
 {
+	ZF_LOGF("Unimplemented for now...");
 #ifdef IOMMU
 	dev_iommu_dma_unmap(xhci_to_dev(ctrl), addr, size);
 #endif

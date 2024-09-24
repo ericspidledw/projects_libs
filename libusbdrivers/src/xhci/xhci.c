@@ -745,20 +745,27 @@ static int _xhci_alloc_device(struct usb_device *udev)
 	 * If this device is root-hub, don't do any xHC related
 	 * stuff.
 	 */
-	if (ctrl->rootdev == 0) {
-		udev->speed = USB_SPEED_SUPER;
-		return 0;
-	}
+	ZF_LOGE("Check rootdev");
+	// if (ctrl->rootdev == 0) {
+	// 	udev->speed = USB_SPEED_SUPER;
+	// 	return 0;
+	// }
 
+	ZF_LOGE("Queue command");
 	xhci_queue_command(ctrl, 0, 0, 0, TRB_ENABLE_SLOT);
+	ZF_LOGE("Out of qeuue command");
 	event = xhci_wait_for_event(ctrl, TRB_COMPLETION);
 	if (!event)
 		return -ETIMEDOUT;
 
+	ZF_LOGE("Get slot id");
 	udev->slot_id = TRB_TO_SLOT_ID(le32_to_cpu(event->event_cmd.flags));
 
+
+	ZF_LOGE("Ack evnt ");
 	xhci_acknowledge_event(ctrl);
 
+	ZF_LOGE("Alloc virt device ");
 	ret = xhci_alloc_virt_device(ctrl, udev->slot_id);
 	if (ret < 0) {
 		/*
@@ -1208,23 +1215,24 @@ static int _xhci_submit_control_msg(struct usb_device *udev, unsigned long pipe,
 		return -EINVAL;
 	}
 
-	if (usb_pipedevice(pipe) == ctrl->rootdev) // if our pipe device is the root controller
-	return xhci_submit_root(udev, pipe, buffer, setup); // submit to root
+	// if (usb_pipedevice(pipe) == ctrl->rootdev)
+	// return xhci_submit_root(udev, pipe, buffer, setup);
 
-	ZF_LOGF("Should be root device making call for now");
+	// ZF_LOGF("Should be root device making call for now");
 	if (setup->request == USB_REQ_SET_ADDRESS &&
 	   (setup->requesttype & USB_TYPE_MASK) == USB_TYPE_STANDARD)
 		return xhci_address_device(udev, root_portnr); // set the address of the device
 
-	if (setup->request == USB_REQ_SET_CONFIGURATION &&
-	   (setup->requesttype & USB_TYPE_MASK) == USB_TYPE_STANDARD) {
-		ret = xhci_set_configuration(udev); // set the configuration of the device
-		if (ret) {
-			puts("Failed to configure xHCI endpoint\n");
-			return ret;
-		}
-	}
+	// if (setup->request == USB_REQ_SET_CONFIGURATION &&
+	//    (setup->requesttype & USB_TYPE_MASK) == USB_TYPE_STANDARD) {
+	// 	ret = xhci_set_configuration(udev); // set the configuration of the device
+	// 	if (ret) {
+	// 		puts("Failed to configure xHCI endpoint\n");
+	// 		return ret;
+	// 	}
+	// }
 
+	ZF_LOGE("going into transmt");
 	return xhci_ctrl_tx(udev, pipe, setup, length, buffer); // otherwise just do a TX
 }
 
@@ -1514,6 +1522,7 @@ int xhci_host_init(usb_host_t *hdev, uintptr_t regs,
 	hdev->schedule_xact = xhci_schedule_xact; // ok we need to figure out these pointers...
 	// hdev->cancel_xact = xhci_cancel_xact;
 	hdev->handle_irq = xhci_handle_irq;
+	hdev->ctrl = ctrl;
 
 	printf("leaving the host controller init error free\n");
 	return 0;

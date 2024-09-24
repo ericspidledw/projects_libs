@@ -32,16 +32,28 @@
 dma_addr_t xhci_trb_virt_to_dma(struct xhci_segment *seg,
 				union xhci_trb *trb)
 {
+	int ret = 0;
 	unsigned long segment_offset;
 
-	if (!seg || !trb || trb < seg->trbs)
-		return 0;
+	if (!seg || !trb || trb < seg->trbs){
+		ZF_LOGE("Missing segment, trb or trb is less than segment trbs");
+		goto err;
+	}
 	/* offset in TRBs */
 	segment_offset = trb - seg->trbs;
-	if (segment_offset >= TRBS_PER_SEGMENT)
-		return 0;
-	return seg->dma + (segment_offset * sizeof(*trb));
+	if (segment_offset >= TRBS_PER_SEGMENT){
+		ZF_LOGE("seg offset is greater then trb");
+		goto err;
+	}
+
+	ret = seg->dma + (segment_offset * sizeof(*trb));
+	ZF_LOGE("Ret returns %p", ret);
+	return ret;
+	err:
+	ZF_LOGE("Ret returns %p", ret);
+	return ret;
 }
+
 
 // /**
 //  * Is this TRB a link TRB or was the last TRB the last TRB in this event ring
@@ -232,8 +244,16 @@ static dma_addr_t queue_trb(struct xhci_ctrl *ctrl, struct xhci_ring *ring,
 static int prepare_ring(struct xhci_ctrl *ctrl, struct xhci_ring *ep_ring,
 							u32 ep_state)
 {
-	union xhci_trb *next = ep_ring->enqueue;
-
+	ZF_LOGE("Inside of prepare ring");
+	ZF_LOGE("1");
+	ZF_LOGE("ep ring is %p", ep_ring);
+	union xhci_trb *next = ep_ring->enqueue; // ep_ring --> enqueue is
+	ZF_LOGE("2");
+	assert(ctrl);
+	ZF_LOGE("3");
+	assert(ep_ring);
+	ZF_LOGE("4");
+	printf("Going into the switch\n");
 	/* Make sure the endpoint has been added to xHC schedule */
 	switch (ep_state) {
 	case EP_STATE_DISABLED:
@@ -241,20 +261,20 @@ static int prepare_ring(struct xhci_ctrl *ctrl, struct xhci_ring *ep_ring,
 		 * USB core changed config/interfaces without notifying us,
 		 * or hardware is reporting the wrong state.
 		 */
-		puts("WARN urb submitted to disabled ep\n");
+		printf("WARN urb submitted to disabled ep\n");
 		return -ENOENT;
 	case EP_STATE_ERROR:
-		puts("WARN waiting for error on ep to be cleared\n");
+		printf("WARN waiting for error on ep to be cleared\n");
 		return -EINVAL;
 	case EP_STATE_HALTED:
-		puts("WARN endpoint is halted\n");
+		printf("WARN endpoint is halted\n");
 		return -EINVAL;
 	case EP_STATE_STOPPED:
 	case EP_STATE_RUNNING:
-		ZF_LOGE("EP STATE RUNNING.\n");
+		printf("EP STATE RUNNING.\n");
 		break;
 	default:
-		puts("ERROR unknown endpoint state for ep\n");
+		printf("ERROR unknown endpoint state for ep\n");
 		return -EINVAL;
 	}
 
@@ -298,10 +318,14 @@ int xhci_queue_command(struct xhci_ctrl *ctrl, dma_addr_t addr, u32 slot_id,
 	u32 fields[4];
 	int ret;
 
+	ZF_LOGE("Preparing the ring addr is %p", addr);
 	ret = prepare_ring(ctrl, ctrl->cmd_ring, EP_STATE_RUNNING);
+	ZF_LOGE("WE made it out the ring");
 	if (ret < 0)
 		return ret;
 
+
+	ZF_LOGE("Setting the fields");
 	fields[0] = lower_32_bits(addr);
 	fields[1] = upper_32_bits(addr);
 	fields[2] = 0;
@@ -315,9 +339,11 @@ int xhci_queue_command(struct xhci_ctrl *ctrl, dma_addr_t addr, u32 slot_id,
 	if (cmd >= TRB_RESET_EP && cmd <= TRB_SET_DEQ)
 		fields[3] |= EP_ID_FOR_TRB(ep_index);
 
+	ZF_LOGE("QUEUE up the TRB");
 	queue_trb(ctrl, ctrl->cmd_ring, false, fields);
 
 	/* Ring the command ring doorbell */
+	ZF_LOGE("XHCI write the doorbell");
 	xhci_writel(&ctrl->dba->doorbell[0], DB_VALUE_HOST);
 	return 0;
 }
@@ -966,7 +992,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 	if (length > 0) {
 		if (req->requesttype & USB_DIR_IN)
 			field |= TRB_DIR_IN;
-		buf_64 = xhci_dma_map(ctrl, buffer, length);
+		buf_64 = (u64) xhci_dma_map(ctrl, buffer, length);
 
 		trb_fields[0] = lower_32_bits(buf_64);
 		trb_fields[1] = upper_32_bits(buf_64);

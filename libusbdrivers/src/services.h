@@ -74,7 +74,7 @@ static inline void *ps_dma_alloc_pinned(ps_dma_man_t *dma_man, size_t size,
     else {
         printf("We got a null addr\n");
     }
-    return addr;
+    return addr; // vaddr is here, paddr is above.....
 }
 
 static inline void ps_dma_free_pinned(ps_dma_man_t *dma_man, void *addr, size_t size)
