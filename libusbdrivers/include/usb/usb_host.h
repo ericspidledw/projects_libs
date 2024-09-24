@@ -35,6 +35,12 @@ enum usb_endpoint_type {
     EP_INTERRUPT
 };
 
+// from UBOOT DRIVER
+// #define PIPE_ISOCHRONOUS    0U
+// #define PIPE_INTERRUPT      1U
+// #define PIPE_CONTROL        2U
+// #define PIPE_BULK           3U
+
 /* NOTE: do not change the defined order, see USB 2.0 spec(9.6.6) */
 enum usb_endpoint_dir {
     EP_DIR_OUT = 0,
@@ -52,7 +58,7 @@ struct endpoint {
     void      *hcpriv;
 };
 
-enum usb_xact_type {
+enum usb_xact_type { // transaction type
 /// Input PID
     PID_IN,
 /// Output PID
@@ -81,12 +87,12 @@ enum usb_xact_status {
 #define MAX_XACT_SIZE  (5 * PAGE_SIZE_4K)
 struct xact {
 /// Transfer type
-    enum usb_xact_type type;
+    enum usb_xact_type type; // the type
 /// DMA buffer to exchange
     void* vaddr;
     uintptr_t paddr;
 /// The length of @ref{buf}
-    int len;
+    int len; // the length of the buffer
 };
 
 static inline void* xact_get_vaddr(struct xact* xact)
@@ -138,7 +144,9 @@ struct usb_host {
     /// IRQ numbers tied to this device
     const int* irqs;
     /// Host private data
+    struct xhci_ctrl* ctrl;
     struct usb_hc_data* pdata;
+    struct usb_device * drv_dev;
 };
 
 
@@ -169,8 +177,15 @@ usb_hcd_schedule(usb_host_t* hdev, uint8_t addr, uint8_t hub_addr, uint8_t hub_p
                  enum usb_speed speed, struct endpoint *ep,
                  struct xact* xact, int nxact, usb_cb_t cb, void* t)
 {
-    return hdev->schedule_xact(hdev, addr, hub_addr, hub_port, speed, ep,
+    ZF_LOGE("Inside the hcd scheduler");
+    if(hdev->schedule_xact){
+        return hdev->schedule_xact(hdev, addr, hub_addr, hub_port, speed, ep,
                                xact, nxact, cb, t);
+    }
+    else {
+        ZF_LOGF("Missing function pointer too schedule_xact");
+    }
+
 }
 
 static inline void

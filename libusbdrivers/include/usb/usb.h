@@ -90,6 +90,8 @@ struct usb_dev {
     struct endpoint *ep_ctrl;         // Control endpoint of the device
     struct endpoint *ep[USB_MAX_EPS]; // Data endpoints of the device
 
+    struct xhci_ctrl* ctrl;
+
     /* For device lists */
     struct usb_dev      *next;
 };
@@ -127,6 +129,17 @@ enum Request {
     SET_INTERFACE     = 11,
     SYNCH_FRAME       = 12
 };
+
+
+
+// veryu similar type from our uboot driver
+// struct devrequest {
+// 	__u8	requesttype; // type
+// 	__u8	request; // actual request
+// 	__le16	value;
+// 	__le16	index;
+// 	__le16	length;
+// } __attribute__ ((packed));
 
 /*** bmRequestType ***/
 struct usbreq {

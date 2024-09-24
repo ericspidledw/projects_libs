@@ -290,7 +290,6 @@
 // 		void *buffer, int transfer_len, int interval, bool nonblock);
 // int usb_lock_async(struct usb_device *dev, int lock);
 // int usb_disable_asynch(int disable);
-// int usb_maxpacket(struct usb_device *dev, unsigned long pipe);
 // int usb_get_configuration_no(struct usb_device *dev, int cfgno,
 // 			unsigned char *buffer, int length);
 // int usb_get_configuration_len(struct usb_device *dev, int cfgno);
@@ -362,36 +361,36 @@
 //  * appropriately.
 //  */
 // /* Create various pipes... */
-// #define create_pipe(dev,endpoint) \
-// 		(((dev)->devnum << 8) | ((endpoint) << 15) | \
-// 		(dev)->maxpacketsize)
-// #define default_pipe(dev) ((dev)->speed << 26)
+#define create_pipe(dev,endpoint) \
+		(((dev)->devnum << 8) | ((endpoint) << 15) | \
+		(dev)->maxpacketsize)
+#define default_pipe(dev) ((dev)->speed << 26)
 
-// #define usb_sndctrlpipe(dev, endpoint)	((PIPE_CONTROL << 30) | \
-// 					 create_pipe(dev, endpoint))
-// #define usb_rcvctrlpipe(dev, endpoint)	((PIPE_CONTROL << 30) | \
-// 					 create_pipe(dev, endpoint) | \
-// 					 USB_DIR_IN)
-// #define usb_sndisocpipe(dev, endpoint)	((PIPE_ISOCHRONOUS << 30) | \
-// 					 create_pipe(dev, endpoint))
-// #define usb_rcvisocpipe(dev, endpoint)	((PIPE_ISOCHRONOUS << 30) | \
-// 					 create_pipe(dev, endpoint) | \
-// 					 USB_DIR_IN)
-// #define usb_sndbulkpipe(dev, endpoint)	((PIPE_BULK << 30) | \
-// 					 create_pipe(dev, endpoint))
-// #define usb_rcvbulkpipe(dev, endpoint)	((PIPE_BULK << 30) | \
-// 					 create_pipe(dev, endpoint) | \
-// 					 USB_DIR_IN)
-// #define usb_sndintpipe(dev, endpoint)	((PIPE_INTERRUPT << 30) | \
-// 					 create_pipe(dev, endpoint))
-// #define usb_rcvintpipe(dev, endpoint)	((PIPE_INTERRUPT << 30) | \
-// 					 create_pipe(dev, endpoint) | \
-// 					 USB_DIR_IN)
-// #define usb_snddefctrl(dev)		((PIPE_CONTROL << 30) | \
-// 					 default_pipe(dev))
-// #define usb_rcvdefctrl(dev)		((PIPE_CONTROL << 30) | \
-// 					 default_pipe(dev) | \
-// 					 USB_DIR_IN)
+#define usb_sndctrlpipe(dev, endpoint)	((PIPE_CONTROL << 30) | \
+					 create_pipe(dev, endpoint))
+#define usb_rcvctrlpipe(dev, endpoint)	((PIPE_CONTROL << 30) | \
+					 create_pipe(dev, endpoint) | \
+					 USB_DIR_IN)
+#define usb_sndisocpipe(dev, endpoint)	((PIPE_ISOCHRONOUS << 30) | \
+					 create_pipe(dev, endpoint))
+#define usb_rcvisocpipe(dev, endpoint)	((PIPE_ISOCHRONOUS << 30) | \
+					 create_pipe(dev, endpoint) | \
+					 USB_DIR_IN)
+#define usb_sndbulkpipe(dev, endpoint)	((PIPE_BULK << 30) | \
+					 create_pipe(dev, endpoint))
+#define usb_rcvbulkpipe(dev, endpoint)	((PIPE_BULK << 30) | \
+					 create_pipe(dev, endpoint) | \
+					 USB_DIR_IN)
+#define usb_sndintpipe(dev, endpoint)	((PIPE_INTERRUPT << 30) | \
+					 create_pipe(dev, endpoint))
+#define usb_rcvintpipe(dev, endpoint)	((PIPE_INTERRUPT << 30) | \
+					 create_pipe(dev, endpoint) | \
+					 USB_DIR_IN)
+#define usb_snddefctrl(dev)		((PIPE_CONTROL << 30) | \
+					 default_pipe(dev))
+#define usb_rcvdefctrl(dev)		((PIPE_CONTROL << 30) | \
+					 default_pipe(dev) | \
+					 USB_DIR_IN)
 
 // /* The D0/D1 toggle bits */
 // #define usb_gettoggle(dev, ep, out) (((dev)->toggle[out] >> ep) & 1)
@@ -409,22 +408,22 @@
 // #define usb_packetid(pipe)	(((pipe) & USB_DIR_IN) ? USB_PID_IN : \
 // 				 USB_PID_OUT)
 
-// #define usb_pipeout(pipe)	((((pipe) >> 7) & 1) ^ 1)
-// #define usb_pipein(pipe)	(((pipe) >> 7) & 1)
-// #define usb_pipedevice(pipe)	(((pipe) >> 8) & 0x7f)
-// #define usb_pipe_endpdev(pipe)	(((pipe) >> 8) & 0x7ff)
-// #define usb_pipeendpoint(pipe)	(((pipe) >> 15) & 0xf)
-// #define usb_pipedata(pipe)	(((pipe) >> 19) & 1)
-// #define usb_pipetype(pipe)	(((pipe) >> 30) & 3)
-// #define usb_pipeisoc(pipe)	(usb_pipetype((pipe)) == PIPE_ISOCHRONOUS)
-// #define usb_pipeint(pipe)	(usb_pipetype((pipe)) == PIPE_INTERRUPT)
-// #define usb_pipecontrol(pipe)	(usb_pipetype((pipe)) == PIPE_CONTROL)
-// #define usb_pipebulk(pipe)	(usb_pipetype((pipe)) == PIPE_BULK)
+#define usb_pipeout(pipe)	((((pipe) >> 7) & 1) ^ 1)
+#define usb_pipein(pipe)	(((pipe) >> 7) & 1)
+#define usb_pipedevice(pipe)	(((pipe) >> 8) & 0x7f)
+#define usb_pipe_endpdev(pipe)	(((pipe) >> 8) & 0x7ff)
+#define usb_pipeendpoint(pipe)	(((pipe) >> 15) & 0xf)
+#define usb_pipedata(pipe)	(((pipe) >> 19) & 1)
+#define usb_pipetype(pipe)	(((pipe) >> 30) & 3)
+#define usb_pipeisoc(pipe)	(usb_pipetype((pipe)) == PIPE_ISOCHRONOUS)
+#define usb_pipeint(pipe)	(usb_pipetype((pipe)) == PIPE_INTERRUPT)
+#define usb_pipecontrol(pipe)	(usb_pipetype((pipe)) == PIPE_CONTROL)
+#define usb_pipebulk(pipe)	(usb_pipetype((pipe)) == PIPE_BULK)
 
-// #define usb_pipe_ep_index(pipe)	\
-// 		usb_pipecontrol(pipe) ? (usb_pipeendpoint(pipe) * 2) : \
-// 				((usb_pipeendpoint(pipe) * 2) - \
-// 				 (usb_pipein(pipe) ? 0 : 1))
+#define usb_pipe_ep_index(pipe)	\
+		usb_pipecontrol(pipe) ? (usb_pipeendpoint(pipe) * 2) : \
+				((usb_pipeendpoint(pipe) * 2) - \
+				 (usb_pipein(pipe) ? 0 : 1))
 
 // /**
 //  * struct usb_device_id - identifies USB devices for probing and hotplugging

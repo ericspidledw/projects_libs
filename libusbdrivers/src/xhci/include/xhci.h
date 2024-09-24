@@ -19,8 +19,25 @@
 #include <usb/usb_host.h>
 #include <xhci_usb.h>
 #include <usb_defs.h>
+#include <usb/usb.h>
 #include <usb.h>
 #include "../../services.h"
+#include <string.h>
+
+
+
+#define min(x, y) ({				\
+	typeof(x) _min1 = (x);			\
+	typeof(y) _min2 = (y);			\
+	(void) (&_min1 == &_min2);		\
+	_min1 < _min2 ? _min1 : _min2; })
+
+#define max(x, y) ({				\
+	typeof(x) _max1 = (x);			\
+	typeof(y) _max2 = (y);			\
+	(void) (&_max1 == &_max2);		\
+	_max1 > _max2 ? _max1 : _max2; })
+
 
 
 // #include <usb/drivers/usbhub.h>
@@ -37,7 +54,7 @@
 
 #define MAX_EP_CTX_NUM		31
 #define XHCI_ALIGNMENT		64
-/* Gen eric timeout for XHCI events */
+/* Generic timeout for XHCI events */
 #define XHCI_TIMEOUT		5000
 /* Max number of USB devices for any host controller - limit in section 6.1 */
 #define MAX_HC_SLOTS            256
@@ -105,6 +122,154 @@ typedef uint16_t	__le16;
 typedef
 
 #define NS_TO_US(x)  (x/1000)
+
+enum uclass_id {
+	/* These are used internally by driver model */
+	UCLASS_ROOT = 0,
+	UCLASS_DEMO,
+	UCLASS_TEST,
+	UCLASS_TEST_FDT,
+	UCLASS_TEST_FDT_MANUAL,
+	UCLASS_TEST_BUS,
+	UCLASS_TEST_PROBE,
+	UCLASS_TEST_DUMMY,
+	UCLASS_TEST_DEVRES,
+	UCLASS_TEST_ACPI,
+	UCLASS_SPI_EMUL,	/* sandbox SPI device emulator */
+	UCLASS_I2C_EMUL,	/* sandbox I2C device emulator */
+	UCLASS_I2C_EMUL_PARENT,	/* parent for I2C device emulators */
+	UCLASS_PCI_EMUL,	/* sandbox PCI device emulator */
+	UCLASS_PCI_EMUL_PARENT,	/* parent for PCI device emulators */
+	UCLASS_USB_EMUL,	/* sandbox USB bus device emulator */
+	UCLASS_AXI_EMUL,	/* sandbox AXI bus device emulator */
+
+	/* U-Boot uclasses start here - in alphabetical order */
+	UCLASS_ACPI_PMC,	/* (x86) Power-management controller (PMC) */
+	UCLASS_ADC,		/* Analog-to-digital converter */
+	UCLASS_AHCI,		/* SATA disk controller */
+	UCLASS_AUDIO_CODEC,	/* Audio codec with control and data path */
+	UCLASS_AXI,		/* AXI bus */
+	UCLASS_BLK,		/* Block device */
+	UCLASS_BLKMAP,		/* Composable virtual block device */
+	UCLASS_BOOTCOUNT,       /* Bootcount backing store */
+	UCLASS_BOOTDEV,		/* Boot device for locating an OS to boot */
+	UCLASS_BOOTMETH,	/* Bootmethod for booting an OS */
+	UCLASS_BOOTSTD,		/* Standard boot driver */
+	UCLASS_BUTTON,		/* Button */
+	UCLASS_CACHE,		/* Cache controller */
+	UCLASS_CLK,		/* Clock source, e.g. used by peripherals */
+	UCLASS_CPU,		/* CPU, typically part of an SoC */
+	UCLASS_CROS_EC,		/* Chrome OS EC */
+	UCLASS_DISPLAY,		/* Display (e.g. DisplayPort, HDMI) */
+	UCLASS_DMA,		/* Direct Memory Access */
+	UCLASS_DSA,		/* Distributed (Ethernet) Switch Architecture */
+	UCLASS_DSI_HOST,	/* Display Serial Interface host */
+	UCLASS_ECDSA,		/* Elliptic curve cryptographic device */
+	UCLASS_EFI_LOADER,	/* Devices created by UEFI applications */
+	UCLASS_EFI_MEDIA,	/* Devices provided by UEFI firmware */
+	UCLASS_ETH,		/* Ethernet device */
+	UCLASS_ETH_PHY,		/* Ethernet PHY device */
+	UCLASS_EXTCON,		/* External Connector Class */
+	UCLASS_FFA,		/* Arm Firmware Framework for Armv8-A */
+	UCLASS_FFA_EMUL,		/* sandbox FF-A device emulator */
+	UCLASS_FIRMWARE,	/* Firmware */
+	UCLASS_FPGA,		/* FPGA device */
+	UCLASS_FUZZING_ENGINE,	/* Fuzzing engine */
+	UCLASS_FS_FIRMWARE_LOADER,		/* Generic loader */
+	UCLASS_FWU_MDATA,	/* FWU Metadata Access */
+	UCLASS_GPIO,		/* Bank of general-purpose I/O pins */
+	UCLASS_HASH,		/* Hash device */
+	UCLASS_HWSPINLOCK,	/* Hardware semaphores */
+	UCLASS_HOST,		/* Sandbox host device */
+	UCLASS_I2C,		/* I2C bus */
+	UCLASS_I2C_EEPROM,	/* I2C EEPROM device */
+	UCLASS_I2C_GENERIC,	/* Generic I2C device */
+	UCLASS_I2C_MUX,		/* I2C multiplexer */
+	UCLASS_I2S,		/* I2S bus */
+	UCLASS_IDE,		/* IDE device */
+	UCLASS_IOMMU,		/* IOMMU */
+	UCLASS_IRQ,		/* Interrupt controller */
+	UCLASS_KEYBOARD,	/* Keyboard input device */
+	UCLASS_LED,		/* Light-emitting diode (LED) */
+	UCLASS_LPC,		/* x86 'low pin count' interface */
+	UCLASS_MAILBOX,		/* Mailbox controller */
+	UCLASS_MASS_STORAGE,	/* Mass storage device */
+	UCLASS_MDIO,		/* MDIO bus */
+	UCLASS_MDIO_MUX,	/* MDIO MUX/switch */
+	UCLASS_MEMORY,		/* Memory Controller device */
+	UCLASS_SM,		/* Secure Monitor driver */
+	UCLASS_MISC,		/* Miscellaneous device */
+	UCLASS_MMC,		/* SD / MMC card or chip */
+	UCLASS_MOD_EXP,		/* RSA Mod Exp device */
+	UCLASS_MTD,		/* Memory Technology Device (MTD) device */
+	UCLASS_MUX,		/* Multiplexer device */
+	UCLASS_NOP,		/* No-op devices */
+	UCLASS_NORTHBRIDGE,	/* Intel Northbridge / SDRAM controller */
+	UCLASS_NVME,		/* NVM Express device */
+	UCLASS_NVMXIP,		/* NVM XIP devices */
+	UCLASS_P2SB,		/* (x86) Primary-to-Sideband Bus */
+	UCLASS_PANEL,		/* Display panel, such as an LCD */
+	UCLASS_PANEL_BACKLIGHT,	/* Backlight controller for panel */
+	UCLASS_PARTITION,	/* Logical disk partition device */
+	UCLASS_PCH,		/* x86 platform controller hub */
+	UCLASS_PCI,		/* PCI bus */
+	UCLASS_PCI_EP,		/* PCI endpoint device */
+	UCLASS_PCI_GENERIC,	/* Generic PCI bus device */
+	UCLASS_PHY,		/* Physical Layer (PHY) device */
+	UCLASS_PINCONFIG,	/* Pin configuration node device */
+	UCLASS_PINCTRL,		/* Pinctrl (pin muxing/configuration) device */
+	UCLASS_PMIC,		/* PMIC I/O device */
+	UCLASS_POWER_DOMAIN,	/* (SoC) Power domains */
+	UCLASS_PVBLOCK,		/* Xen virtual block device */
+	UCLASS_PWM,		/* Pulse-width modulator */
+	UCLASS_PWRSEQ,		/* Power sequence device */
+	UCLASS_QFW,		/* QEMU firmware config device */
+	UCLASS_RAM,		/* RAM controller */
+	UCLASS_REBOOT_MODE,	/* Reboot mode */
+	UCLASS_REGULATOR,	/* Regulator device */
+	UCLASS_REMOTEPROC,	/* Remote Processor device */
+	UCLASS_RESET,		/* Reset controller device */
+	UCLASS_RKMTD,		/* Rockchip MTD device */
+	UCLASS_RNG,		/* Random Number Generator */
+	UCLASS_RTC,		/* Real time clock device */
+	UCLASS_SCMI_AGENT,	/* Interface with an SCMI server */
+	UCLASS_SCMI_BASE,	/* Interface for SCMI Base protocol */
+	UCLASS_SCSI,		/* SCSI device */
+	UCLASS_SERIAL,		/* Serial UART */
+	UCLASS_SIMPLE_BUS,	/* Bus with child devices */
+	UCLASS_SMEM,		/* Shared memory interface */
+	UCLASS_SOC,		/* SOC Device */
+	UCLASS_SOUND,		/* Playing simple sounds */
+	UCLASS_SPI,		/* SPI bus */
+	UCLASS_SPI_FLASH,	/* SPI flash */
+	UCLASS_SPI_GENERIC,	/* Generic SPI flash target */
+	UCLASS_SPMI,		/* System Power Management Interface bus */
+	UCLASS_SYSCON,		/* System configuration device */
+	UCLASS_SYSINFO,		/* Device information from hardware */
+	UCLASS_SYSRESET,	/* System reset device */
+	UCLASS_TEE,		/* Trusted Execution Environment device */
+	UCLASS_THERMAL,		/* Thermal sensor */
+	UCLASS_TIMER,		/* Timer device */
+	UCLASS_TPM,		/* Trusted Platform Module TIS interface */
+	UCLASS_UFS,		/* Universal Flash Storage */
+	UCLASS_USB,		/* USB bus */
+	UCLASS_USB_DEV_GENERIC,	/* USB generic device */
+	UCLASS_USB_HUB,		/* USB hub */
+	UCLASS_USB_GADGET_GENERIC,	/* USB generic device */
+	UCLASS_VIDEO,		/* Video or LCD device */
+	UCLASS_VIDEO_BRIDGE,	/* Video bridge, e.g. DisplayPort to LVDS */
+	UCLASS_VIDEO_CONSOLE,	/* Text console driver for video device */
+	UCLASS_VIDEO_OSD,	/* On-screen display */
+	UCLASS_VIRTIO,		/* VirtIO transport device */
+	UCLASS_W1,		/* Dallas 1-Wire bus */
+	UCLASS_W1_EEPROM,	/* one-wire EEPROMs */
+	UCLASS_WDT,		/* Watchdog Timer driver */
+
+	UCLASS_COUNT,
+	UCLASS_INVALID = -1,
+};
+
+
 
 #define read_poll_timeout(op, val, cond, sleep_us, timeout_us, args...)	\
 ({ \
@@ -1001,6 +1166,7 @@ struct xhci_event_cmd {
 #define cpu_to_le32(x)  ((uint32_t) x)
 #define cpu_to_le64(x)  ((uint64_t) x)
 #define le32_to_cpu(x) 	((uint32_t) x)
+#define le16_to_cpu(x) 	((uint16_t) x)
 
 /* flags bitmasks */
 /* bits 16:23 are the virtual function ID */
@@ -1087,6 +1253,68 @@ union xhci_trb {
 #define	TRB_TYPE_BITMASK	(0xfc00)
 #define TRB_TYPE(p)		((p) << 10)
 #define TRB_FIELD_TO_TYPE(p)	(((p) & TRB_TYPE_BITMASK) >> 10)
+
+enum usb_device_speed {
+	USB_SPEED_UNKNOWN = 0,			/* enumerating */
+	USB_SPEED_LOW, USB_SPEED_FULL,		/* usb 1.1 */
+	USB_SPEED_HIGH,				/* usb 2.0 */
+	USB_SPEED_WIRELESS,			/* wireless (usb 2.5) */
+	USB_SPEED_SUPER,			/* usb 3.0 */
+	USB_SPEED_SUPER_PLUS,			/* usb 3.1 */
+};
+
+
+
+struct usb_device {
+	int	devnum;			/* Device number on USB bus */
+	enum usb_device_speed speed;	/* full/low/high */
+	char	mf[32];			/* manufacturer */
+	char	prod[32];		/* product */
+	char	serial[32];		/* serial number */
+
+	/* Maximum packet size; one of: PACKET_SIZE_* */
+	int maxpacketsize;
+	/* one bit for each endpoint ([0] = IN, [1] = OUT) */
+	unsigned int toggle[2];
+	/* endpoint halts; one bit per endpoint # & direction;
+	 * [0] = IN, [1] = OUT
+	 */
+	unsigned int halted[2];
+	int epmaxpacketin[16];		/* INput endpoint specific maximums */
+	int epmaxpacketout[16];		/* OUTput endpoint specific maximums */
+
+	int configno;			/* selected config number */
+	/* Device Descriptor */
+	struct usb_device_descriptor descriptor
+		__attribute__((aligned(ARCH_DMA_MINALIGN)));
+	struct usb_config config; /* config descriptor */
+
+	int have_langid;		/* whether string_langid is valid yet */
+	int string_langid;		/* language ID for strings */
+	int (*irq_handle)(struct usb_device *dev);
+	unsigned long irq_status;
+	int irq_act_len;		/* transferred bytes */
+	void *privptr;
+	/*
+	 * Child devices -  if this is a hub device
+	 * Each instance needs its own set of data structures.
+	 */
+	unsigned long status;
+	unsigned long int_pending;	/* 1 bit per ep, used by int_queue */
+	int act_len;			/* transferred bytes */
+	int maxchild;			/* Number of ports if hub */
+	int portnr;			/* Port number, 1=first */
+	/* parent hub, or NULL if this is the root hub */
+	struct usb_device *parent;
+	struct usb_device *children[USB_MAXCHILDREN];
+	void *controller;		/* hardware controller private data */
+	/* slot_id - for xHCI enabled devices */
+	unsigned int slot_id;
+	struct udevice *dev;		/* Pointer to associated device */
+	struct udevice *controller_dev;	/* Pointer to associated controller */
+	struct xhci_ctrl* ctrl;
+};
+
 
 /* TRB type IDs */
 typedef enum {
@@ -1484,6 +1712,13 @@ struct xhci_ring *xhci_ring_alloc(struct xhci_ctrl *ctrl, unsigned int num_segs,
 int xhci_alloc_virt_device(struct xhci_ctrl *ctrl, unsigned int slot_id);
 int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
 		  struct xhci_hcor *hcor);
+int usb_maxpacket(struct usb_device *dev, unsigned long pipe);
+void udelay(uint64_t us);
+uint64_t timeout_time();
+
+
+#define USB_TYPE_MASK                        (0x03 << 5)
+
 
 /**
  * xhci_deregister() - Unregister an XHCI controller
@@ -1492,7 +1727,7 @@ int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
  * Return: 0 if registered, -ve on error
  */
 int xhci_deregister(struct xhci_ctrl *ctr);
-
+int xhci_alloc_device(struct udevice *dev, struct usb_device *udev);
 int xhci_host_init(usb_host_t *hdev, uintptr_t regs,
 	void (*board_pwren) (int port, int state), ps_dma_man_t* dma_man);
 
@@ -1501,16 +1736,15 @@ extern struct dm_usb_ops xhci_usb_ops;
 
 struct xhci_ctrl *xhci_get_ctrl(struct usb_device *udev);
 
-static inline dma_addr_t xhci_dma_map(struct xhci_ctrl *ctrl, void *addr,
+
+//the driver expects us to return the phys addr and put the vaddr in the passed in var
+// can we do that?
+static inline void* xhci_dma_map(struct xhci_ctrl *ctrl, uintptr_t* addr,
 				      size_t size)
 {
+	printf("mapping in addr %p\n", addr);
 	ps_dma_alloc_pinned(ctrl->dma_man, size, 32, 0, PS_MEM_NORMAL, addr);
-	// ps_dma_alloc_pinned();
-// #ifdef IOMMU
-// 	return dev_iommu_dma_map(xhci_to_dev(ctrl), addr, size);
-// #else
-// 	return dev_phys_to_bus(xhci_to_dev(ctrl), virt_to_phys(addr));
-// #endif
+	return addr;
 }
 
 static inline void xhci_dma_unmap(struct xhci_ctrl *ctrl, dma_addr_t addr,

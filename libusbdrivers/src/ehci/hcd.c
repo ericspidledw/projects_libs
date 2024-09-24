@@ -98,10 +98,10 @@ int ehci_schedule_xact(usb_host_t *hdev, uint8_t addr, int8_t hub_addr,
 	if (!hdev) {
 		ZF_LOGF("Invalid USB host\n");
 	}
-	edev = _hcd_to_ehci(hdev);
-	if (hub_addr == -1) {
+	edev = _hcd_to_ehci(hdev); // get our ehci dev from our host device
+	if (hub_addr == -1) { // if we don't have a hub dev
 		/* Send off to root handler... No need to create QHn */
-		if (ep->type == EP_INTERRUPT) {
+		if (ep->type == EP_INTERRUPT) { // check the endpoint type
 			return ehci_schedule_periodic_root(edev, xact, nxact,
 							   cb, t);
 		} else {

@@ -772,15 +772,15 @@ hubem_process_xact(usb_hubem_t dev, struct xact *xact, int nxact,
 		}
 
 		if (i + 1 < nxact && xact[i + 1].type != PID_SETUP) {
-			buf = xact_get_vaddr(&xact[i + 1]);
-			buf_len = xact[i + 1].len;
+			buf = xact_get_vaddr(&xact[i + 1]); // set data buffer to next xact (1)
+			buf_len = xact[i + 1].len; // set the length to match it
 		} else {
 			buf = NULL;
 			buf_len = 0;
 		}
 		switch (req->bRequest) {
 		case GET_STATUS:
-			return hubem_get_status(dev, req, buf, buf_len);
+			return hubem_get_status(dev, req, buf, buf_len); // use our device
 		case GET_DESCRIPTOR:
 			return hubem_get_descriptor(dev, req, buf, buf_len);
 		case SET_CONFIGURATION:

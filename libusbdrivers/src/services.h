@@ -69,6 +69,10 @@ static inline void *ps_dma_alloc_pinned(ps_dma_man_t *dma_man, size_t size,
     addr = ps_dma_alloc(dma_man, size, align, cache, flags);
     if (addr != NULL) {
         *paddr = ps_dma_pin(dma_man, addr, size);
+        printf("paddr is %p\n   addr is %p\n", *paddr, addr);
+    }
+    else {
+        printf("We got a null addr\n");
     }
     return addr;
 }

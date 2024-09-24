@@ -289,9 +289,8 @@ static struct xhci_segment* xhci_segment_alloc(struct xhci_ctrl *ctrl)
 	struct xhci_segment *seg;
 
 	seg = malloc(sizeof(struct xhci_segment));
-
-	seg->trbs = xhci_malloc(SEGMENT_SIZE);
-	seg->dma = xhci_dma_map(ctrl, seg->trbs, SEGMENT_SIZE);
+	// = xhci_malloc(SEGMENT_SIZE);
+	seg->trbs = xhci_dma_map(ctrl, &seg->dma, SEGMENT_SIZE);
 
 	seg->next = NULL;
 
@@ -380,8 +379,10 @@ static int xhci_scratchpad_alloc(struct xhci_ctrl *ctrl)
 	if (!scratchpad->sp_array)
 		goto fail_sp2;
 
-	val_64 = xhci_dma_map(ctrl, scratchpad->sp_array,
+ scratchpad->sp_array = (struct xhci_scratchpad *)xhci_dma_map(ctrl, &val_64,
 			      num_sp * sizeof(u64));
+	// val_64 = xhci_dma_map(ctrl, scratchpad->sp_array,
+	// 		      num_sp * sizeof(u64));
 	ctrl->dcbaa->dev_context_ptrs[0] = cpu_to_le64(val_64);
 
 	// xhci_flush_cache((uintptr_t)&ctrl->dcbaa->dev_context_ptrs[0],
@@ -402,7 +403,7 @@ static int xhci_scratchpad_alloc(struct xhci_ctrl *ctrl)
 	// xhci_flush_cache((uintptr_t)buf, num_sp * ctrl->page_size);
 
 	scratchpad->scratchpad = buf;
-	val_64 = xhci_dma_map(ctrl, buf, num_sp * ctrl->page_size);
+	buf = xhci_dma_map(ctrl, &val_64 , num_sp * ctrl->page_size);
 	for (i = 0; i < num_sp; i++) {
 		scratchpad->sp_array[i] = cpu_to_le64(val_64);
 		val_64 += ctrl->page_size;
@@ -431,24 +432,24 @@ fail_sp:
 //  * @param type type of XHCI Container Context
 //  * Return: NULL if failed else pointer to the context on success
 //  */
-// static struct xhci_container_ctx
-// 		*xhci_alloc_container_ctx(struct xhci_ctrl *ctrl, int type)
-// {
-// 	struct xhci_container_ctx *ctx;
+static struct xhci_container_ctx
+		*xhci_alloc_container_ctx(struct xhci_ctrl *ctrl, int type)
+{
+	struct xhci_container_ctx *ctx;
 
-// 	ctx = malloc(sizeof(struct xhci_container_ctx));
+	ctx = malloc(sizeof(struct xhci_container_ctx));
 
-// 	ctx->type = type;
-// 	ctx->size = (MAX_EP_CTX_NUM + 1) *
-// 			CTX_SIZE(xhci_readl(&ctrl->hccr->cr_hccparams));
-// 	if (type == XHCI_CTX_TYPE_INPUT)
-// 		ctx->size += CTX_SIZE(xhci_readl(&ctrl->hccr->cr_hccparams));
+	ctx->type = type;
+	ctx->size = (MAX_EP_CTX_NUM + 1) *
+			CTX_SIZE(xhci_readl(&ctrl->hccr->cr_hccparams));
+	if (type == XHCI_CTX_TYPE_INPUT)
+		ctx->size += CTX_SIZE(xhci_readl(&ctrl->hccr->cr_hccparams));
 
-// 	ctx->bytes = xhci_malloc(ctx->size);
-// 	ctx->dma = xhci_dma_map(ctrl, ctx->bytes, ctx->size);
+	ctx->bytes = xhci_malloc(ctx->size);
+	ctx->dma = xhci_dma_map(ctrl, ctx->bytes, ctx->size);
 
-// 	return ctx;
-// }
+	return ctx;
+}
 
 // /**
 //  * Allocating virtual device
@@ -456,55 +457,55 @@ fail_sp:
 //  * @param udev	pointer to USB deivce structure
 //  * Return: 0 on success else -1 on failure
 //  */
-// int xhci_alloc_virt_device(struct xhci_ctrl *ctrl, unsigned int slot_id)
-// {
-// 	u64 byte_64 = 0;
-// 	struct xhci_virt_device *virt_dev;
+int xhci_alloc_virt_device(struct xhci_ctrl *ctrl, unsigned int slot_id)
+{
+	u64 byte_64 = 0;
+	struct xhci_virt_device *virt_dev;
 
-// 	/* Slot ID 0 is reserved */
-// 	if (ctrl->devs[slot_id]) {
-// 		printf("Virt dev for slot[%d] already allocated\n", slot_id);
-// 		return -EEXIST;
-// 	}
+	/* Slot ID 0 is reserved */
+	if (ctrl->devs[slot_id]) {
+		printf("Virt dev for slot[%d] already allocated\n", slot_id);
+		return -EEXIST;
+	}
 
-// 	ctrl->devs[slot_id] = malloc(sizeof(struct xhci_virt_device));
+	ctrl->devs[slot_id] = malloc(sizeof(struct xhci_virt_device));
 
-// 	if (!ctrl->devs[slot_id]) {
-// 		puts("Failed to allocate virtual device\n");
-// 		return -ENOMEM;
-// 	}
+	if (!ctrl->devs[slot_id]) {
+		puts("Failed to allocate virtual device\n");
+		return -ENOMEM;
+	}
 
-// 	memset(ctrl->devs[slot_id], 0, sizeof(struct xhci_virt_device));
-// 	virt_dev = ctrl->devs[slot_id];
+	memset(ctrl->devs[slot_id], 0, sizeof(struct xhci_virt_device));
+	virt_dev = ctrl->devs[slot_id];
 
-// 	/* Allocate the (output) device context that will be used in the HC. */
-// 	virt_dev->out_ctx = xhci_alloc_container_ctx(ctrl,
-// 					XHCI_CTX_TYPE_DEVICE);
-// 	if (!virt_dev->out_ctx) {
-// 		puts("Failed to allocate out context for virt dev\n");
-// 		return -ENOMEM;
-// 	}
+	/* Allocate the (output) device context that will be used in the HC. */
+	virt_dev->out_ctx = xhci_alloc_container_ctx(ctrl,
+					XHCI_CTX_TYPE_DEVICE);
+	if (!virt_dev->out_ctx) {
+		puts("Failed to allocate out context for virt dev\n");
+		return -ENOMEM;
+	}
 
-// 	/* Allocate the (input) device context for address device command */
-// 	virt_dev->in_ctx = xhci_alloc_container_ctx(ctrl,
-// 					XHCI_CTX_TYPE_INPUT);
-// 	if (!virt_dev->in_ctx) {
-// 		puts("Failed to allocate in context for virt dev\n");
-// 		return -ENOMEM;
-// 	}
+	/* Allocate the (input) device context for address device command */
+	virt_dev->in_ctx = xhci_alloc_container_ctx(ctrl,
+					XHCI_CTX_TYPE_INPUT);
+	if (!virt_dev->in_ctx) {
+		puts("Failed to allocate in context for virt dev\n");
+		return -ENOMEM;
+	}
 
-// 	/* Allocate endpoint 0 ring */
-// 	virt_dev->eps[0].ring = xhci_ring_alloc(ctrl, 1, true);
+	/* Allocate endpoint 0 ring */
+	virt_dev->eps[0].ring = xhci_ring_alloc(ctrl, 1, true);
 
-// 	byte_64 = virt_dev->out_ctx->dma;
+	byte_64 = virt_dev->out_ctx->dma;
 
-// 	/* Point to output device context in dcbaa. */
-// 	ctrl->dcbaa->dev_context_ptrs[slot_id] = cpu_to_le64(byte_64);
+	/* Point to output device context in dcbaa. */
+	ctrl->dcbaa->dev_context_ptrs[slot_id] = cpu_to_le64(byte_64);
 
-// 	xhci_flush_cache((uintptr_t)&ctrl->dcbaa->dev_context_ptrs[slot_id],
-// 			 sizeof(__le64));
-// 	return 0;
-// }
+	// xhci_flush_cache((uintptr_t)&ctrl->dcbaa->dev_context_ptrs[slot_id],
+	// 		 sizeof(__le64));
+	return 0;
+}
 
 // /**
 //  * Allocates the necessary data structures
@@ -533,8 +534,10 @@ int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
 		return -ENOMEM;
 	}
 
-	ctrl->dcbaa->dma = xhci_dma_map(ctrl, ctrl->dcbaa,
+	ctrl->dcbaa = (struct xhci_device_context_array*) xhci_dma_map(ctrl, &ctrl->dcbaa->dma,
 				sizeof(struct xhci_device_context_array));
+
+
 	/* Set the pointer in DCBAA register */
 	xhci_writeq(&hcor->or_dcbaap, ctrl->dcbaa->dma);
 
@@ -566,7 +569,7 @@ int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
 	ctrl->event_ring = xhci_ring_alloc(ctrl, ERST_NUM_SEGS, false);
 	ctrl->erst.entries = xhci_malloc(sizeof(struct xhci_erst_entry) *
 					 ERST_NUM_SEGS);
-	ctrl->erst.erst_dma_addr = xhci_dma_map(ctrl, ctrl->erst.entries,
+	ctrl->erst.entries = (struct xhci_erst_entry*) xhci_dma_map(ctrl, &ctrl->erst.erst_dma_addr,
 			sizeof(struct xhci_erst_entry) * ERST_NUM_SEGS);
 
 	ctrl->erst.num_entries = ERST_NUM_SEGS;
@@ -627,11 +630,11 @@ int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
 //  * @param ctx	pointer to the context
 //  * Return: pointer to the Input control context data
 //  */
-// struct xhci_input_control_ctx
-// 		*xhci_get_input_control_ctx(struct xhci_container_ctx *ctx)
-// {
-// 	return (struct xhci_input_control_ctx *)ctx->bytes;
-// }
+struct xhci_input_control_ctx
+		*xhci_get_input_control_ctx(struct xhci_container_ctx *ctx)
+{
+	return (struct xhci_input_control_ctx *)ctx->bytes;
+}
 
 // /**
 //  * Give the slot context for the passed container context
@@ -640,15 +643,15 @@ int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
 //  * @param ctx	pointer to the context
 //  * Return: pointer to the slot control context data
 //  */
-// struct xhci_slot_ctx *xhci_get_slot_ctx(struct xhci_ctrl *ctrl,
-// 				struct xhci_container_ctx *ctx)
-// {
-// 	if (ctx->type == XHCI_CTX_TYPE_DEVICE)
-// 		return (struct xhci_slot_ctx *)ctx->bytes;
+struct xhci_slot_ctx *xhci_get_slot_ctx(struct xhci_ctrl *ctrl,
+				struct xhci_container_ctx *ctx)
+{
+	if (ctx->type == XHCI_CTX_TYPE_DEVICE)
+		return (struct xhci_slot_ctx *)ctx->bytes;
 
-// 	return (struct xhci_slot_ctx *)
-// 		(ctx->bytes + CTX_SIZE(xhci_readl(&ctrl->hccr->cr_hccparams)));
-// }
+	return (struct xhci_slot_ctx *)
+		(ctx->bytes + CTX_SIZE(xhci_readl(&ctrl->hccr->cr_hccparams)));
+}
 
 // /**
 //  * Gets the EP context from based on the ep_index
@@ -658,19 +661,19 @@ int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
 //  * @param ep_index	index of the endpoint
 //  * Return: pointer to the End point context
 //  */
-// struct xhci_ep_ctx *xhci_get_ep_ctx(struct xhci_ctrl *ctrl,
-// 				    struct xhci_container_ctx *ctx,
-// 				    unsigned int ep_index)
-// {
-// 	/* increment ep index by offset of start of ep ctx array */
-// 	ep_index++;
-// 	if (ctx->type == XHCI_CTX_TYPE_INPUT)
-// 		ep_index++;
+struct xhci_ep_ctx *xhci_get_ep_ctx(struct xhci_ctrl *ctrl,
+				    struct xhci_container_ctx *ctx,
+				    unsigned int ep_index)
+{
+	/* increment ep index by offset of start of ep ctx array */
+	ep_index++;
+	if (ctx->type == XHCI_CTX_TYPE_INPUT)
+		ep_index++;
 
-// 	return (struct xhci_ep_ctx *)
-// 		(ctx->bytes +
-// 		(ep_index * CTX_SIZE(xhci_readl(&ctrl->hccr->cr_hccparams))));
-// }
+	return (struct xhci_ep_ctx *)
+		(ctx->bytes +
+		(ep_index * CTX_SIZE(xhci_readl(&ctrl->hccr->cr_hccparams))));
+}
 
 // /**
 //  * Copy output xhci_ep_ctx to the input xhci_ep_ctx copy.
@@ -683,22 +686,22 @@ int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
 //  * @param ep_index index of the end point
 //  * Return: none
 //  */
-// void xhci_endpoint_copy(struct xhci_ctrl *ctrl,
-// 			struct xhci_container_ctx *in_ctx,
-// 			struct xhci_container_ctx *out_ctx,
-// 			unsigned int ep_index)
-// {
-// 	struct xhci_ep_ctx *out_ep_ctx;
-// 	struct xhci_ep_ctx *in_ep_ctx;
+void xhci_endpoint_copy(struct xhci_ctrl *ctrl,
+			struct xhci_container_ctx *in_ctx,
+			struct xhci_container_ctx *out_ctx,
+			unsigned int ep_index)
+{
+	struct xhci_ep_ctx *out_ep_ctx;
+	struct xhci_ep_ctx *in_ep_ctx;
 
-// 	out_ep_ctx = xhci_get_ep_ctx(ctrl, out_ctx, ep_index);
-// 	in_ep_ctx = xhci_get_ep_ctx(ctrl, in_ctx, ep_index);
+	out_ep_ctx = xhci_get_ep_ctx(ctrl, out_ctx, ep_index);
+	in_ep_ctx = xhci_get_ep_ctx(ctrl, in_ctx, ep_index);
 
-// 	in_ep_ctx->ep_info = out_ep_ctx->ep_info;
-// 	in_ep_ctx->ep_info2 = out_ep_ctx->ep_info2;
-// 	in_ep_ctx->deq = out_ep_ctx->deq;
-// 	in_ep_ctx->tx_info = out_ep_ctx->tx_info;
-// }
+	in_ep_ctx->ep_info = out_ep_ctx->ep_info;
+	in_ep_ctx->ep_info2 = out_ep_ctx->ep_info2;
+	in_ep_ctx->deq = out_ep_ctx->deq;
+	in_ep_ctx->tx_info = out_ep_ctx->tx_info;
+}
 
 // /**
 //  * Copy output xhci_slot_ctx to the input xhci_slot_ctx.
@@ -733,144 +736,144 @@ int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
 //  * @param udev pointer to the Device Data Structure
 //  * Return: returns negative value on failure else 0 on success
 //  */
-// void xhci_setup_addressable_virt_dev(struct xhci_ctrl *ctrl,
-// 				     struct usb_device *udev, int hop_portnr)
-// {
-// 	struct xhci_virt_device *virt_dev;
-// 	struct xhci_ep_ctx *ep0_ctx;
-// 	struct xhci_slot_ctx *slot_ctx;
-// 	u32 port_num = 0;
-// 	u64 trb_64 = 0;
-// 	int slot_id = udev->slot_id;
-// 	int speed = udev->speed;
-// 	int route = 0;
-// #if defined(DM_USB)
-// 	struct usb_device *dev = udev;
-// 	struct usb_hub_device *hub;
-// #endif
+void xhci_setup_addressable_virt_dev(struct xhci_ctrl *ctrl,
+				     struct usb_device *udev, int hop_portnr)
+{
+	struct xhci_virt_device *virt_dev;
+	struct xhci_ep_ctx *ep0_ctx;
+	struct xhci_slot_ctx *slot_ctx;
+	u32 port_num = 0;
+	u64 trb_64 = 0;
+	int slot_id = udev->slot_id;
+	int speed = udev->speed;
+	int route = 0;
+#if defined(DM_USB)
+	struct usb_device *dev = udev;
+	struct usb_hub_device *hub;
+#endif
 
-// 	virt_dev = ctrl->devs[slot_id];
+	virt_dev = ctrl->devs[slot_id];
 
-// 	/* Extract the EP0 and Slot Ctrl */
-// 	ep0_ctx = xhci_get_ep_ctx(ctrl, virt_dev->in_ctx, 0);
-// 	slot_ctx = xhci_get_slot_ctx(ctrl, virt_dev->in_ctx);
+	/* Extract the EP0 and Slot Ctrl */
+	ep0_ctx = xhci_get_ep_ctx(ctrl, virt_dev->in_ctx, 0);
+	slot_ctx = xhci_get_slot_ctx(ctrl, virt_dev->in_ctx);
 
-// 	/* Only the control endpoint is valid - one endpoint context */
-// 	slot_ctx->dev_info |= cpu_to_le32(LAST_CTX(1));
+	/* Only the control endpoint is valid - one endpoint context */
+	slot_ctx->dev_info |= cpu_to_le32(LAST_CTX(1));
 
-// #if defined(DM_USB)
-// 	/* Calculate the route string for this device */
-// 	port_num = dev->portnr;
-// 	while (!usb_hub_is_root_hub(dev->dev)) {
-// 		hub = dev_get_uclass_priv(dev->dev);
-// 		/*
-// 		 * Each hub in the topology is expected to have no more than
-// 		 * 15 ports in order for the route string of a device to be
-// 		 * unique. SuperSpeed hubs are restricted to only having 15
-// 		 * ports, but FS/LS/HS hubs are not. The xHCI specification
-// 		 * says that if the port number the device is greater than 15,
-// 		 * that portion of the route string shall be set to 15.
-// 		 */
-// 		if (port_num > 15)
-// 			port_num = 15;
-// 		route |= port_num << (hub->hub_depth * 4);
-// 		dev = dev_get_parent_priv(dev->dev);
-// 		port_num = dev->portnr;
-// 		dev = dev_get_parent_priv(dev->dev->parent);
-// 	}
+#if defined(DM_USB)
+	/* Calculate the route string for this device */
+	port_num = dev->portnr;
+	while (!usb_hub_is_root_hub(dev->dev)) {
+		hub = dev_get_uclass_priv(dev->dev);
+		/*
+		 * Each hub in the topology is expected to have no more than
+		 * 15 ports in order for the route string of a device to be
+		 * unique. SuperSpeed hubs are restricted to only having 15
+		 * ports, but FS/LS/HS hubs are not. The xHCI specification
+		 * says that if the port number the device is greater than 15,
+		 * that portion of the route string shall be set to 15.
+		 */
+		if (port_num > 15)
+			port_num = 15;
+		route |= port_num << (hub->hub_depth * 4);
+		dev = dev_get_parent_priv(dev->dev);
+		port_num = dev->portnr;
+		dev = dev_get_parent_priv(dev->dev->parent);
+	}
 
-// 	ZF_LOGE("route string %x\n", route);
-// #endif
-// 	slot_ctx->dev_info |= cpu_to_le32(route);
+	ZF_LOGE("route string %x\n", route);
+#endif
+	slot_ctx->dev_info |= cpu_to_le32(route);
 
-// 	switch (speed) {
-// 	case 0:
-// 		slot_ctx->dev_info |= cpu_to_le32(SLOT_SPEED_SS);
-// 		break;
-// 	case 1:
-// 		slot_ctx->dev_info |= cpu_to_le32(SLOT_SPEED_HS);
-// 		break;
-// 	case 2:
-// 		slot_ctx->dev_info |= cpu_to_le32(SLOT_SPEED_FS);
-// 		break;
-// 	case 3:
-// 		slot_ctx->dev_info |= cpu_to_le32(SLOT_SPEED_LS);
-// 		break;
-// 	default:
-// 		/* Speed was set earlier, this shouldn't happen. */
-// 		ZF_LOGF("Speed was already set you should not be here");
-// 	}
+	switch (speed) {
+	case 0:
+		slot_ctx->dev_info |= cpu_to_le32(SLOT_SPEED_SS);
+		break;
+	case 1:
+		slot_ctx->dev_info |= cpu_to_le32(SLOT_SPEED_HS);
+		break;
+	case 2:
+		slot_ctx->dev_info |= cpu_to_le32(SLOT_SPEED_FS);
+		break;
+	case 3:
+		slot_ctx->dev_info |= cpu_to_le32(SLOT_SPEED_LS);
+		break;
+	default:
+		/* Speed was set earlier, this shouldn't happen. */
+		ZF_LOGF("Speed was already set you should not be here");
+	}
 
-// #if defined(DM_USB)
-// 	/* Set up TT fields to support FS/LS devices */
-// 	if (speed == USB_SPEED_LOW || speed == USB_SPEED_FULL) {
-// 		struct udevice *parent = udev->dev;
+#if defined(DM_USB)
+	/* Set up TT fields to support FS/LS devices */
+	if (speed == USB_SPEED_LOW || speed == USB_SPEED_FULL) {
+		struct udevice *parent = udev->dev;
 
-// 		dev = udev;
-// 		do {
-// 			port_num = dev->portnr;
-// 			dev = dev_get_parent_priv(parent);
-// 			if (usb_hub_is_root_hub(dev->dev))
-// 				break;
-// 			parent = dev->dev->parent;
-// 		} while (dev->speed != USB_SPEED_HIGH);
+		dev = udev;
+		do {
+			port_num = dev->portnr;
+			dev = dev_get_parent_priv(parent);
+			if (usb_hub_is_root_hub(dev->dev))
+				break;
+			parent = dev->dev->parent;
+		} while (dev->speed != USB_SPEED_HIGH);
 
-// 		if (!usb_hub_is_root_hub(dev->dev)) {
-// 			hub = dev_get_uclass_priv(dev->dev);
-// 			if (hub->tt.multi)
-// 				slot_ctx->dev_info |= cpu_to_le32(DEV_MTT);
-// 			slot_ctx->tt_info |= cpu_to_le32(TT_PORT(port_num));
-// 			slot_ctx->tt_info |= cpu_to_le32(TT_SLOT(dev->slot_id));
-// 		}
-// 	}
-// #endif
+		if (!usb_hub_is_root_hub(dev->dev)) {
+			hub = dev_get_uclass_priv(dev->dev);
+			if (hub->tt.multi)
+				slot_ctx->dev_info |= cpu_to_le32(DEV_MTT);
+			slot_ctx->tt_info |= cpu_to_le32(TT_PORT(port_num));
+			slot_ctx->tt_info |= cpu_to_le32(TT_SLOT(dev->slot_id));
+		}
+	}
+#endif
 
-// 	port_num = hop_portnr;
-// 	ZF_LOGE("port_num = %d\n", port_num);
+	port_num = hop_portnr;
+	ZF_LOGE("port_num = %d\n", port_num);
 
-// 	slot_ctx->dev_info2 |=
-// 			cpu_to_le32(((port_num & ROOT_HUB_PORT_MASK) <<
-// 				ROOT_HUB_PORT_SHIFT));
+	slot_ctx->dev_info2 |=
+			cpu_to_le32(((port_num & ROOT_HUB_PORT_MASK) <<
+				ROOT_HUB_PORT_SHIFT));
 
-// 	/* Step 4 - ring already allocated */
-// 	/* Step 5 */
-// 	ep0_ctx->ep_info2 = cpu_to_le32(EP_TYPE(CTRL_EP));
-// 	ZF_LOGE("SPEED = %d\n", speed);
+	/* Step 4 - ring already allocated */
+	/* Step 5 */
+	ep0_ctx->ep_info2 = cpu_to_le32(EP_TYPE(CTRL_EP));
+	ZF_LOGE("SPEED = %d\n", speed);
 
-// 	switch (speed) {
-// 	case USB_SPEED_SUPER:
-// 		ep0_ctx->ep_info2 |= cpu_to_le32(MAX_PACKET(512));
-// 		ZF_LOGE("Setting Packet size = 512bytes\n");
-// 		break;
-// 	case USB_SPEED_HIGH:
-// 	/* USB core guesses at a 64-byte max packet first for FS devices */
-// 	case USB_SPEED_FULL:
-// 		ep0_ctx->ep_info2 |= cpu_to_le32(MAX_PACKET(64));
-// 		ZF_LOGE("Setting Packet size = 64bytes\n");
-// 		break;
-// 	case USB_SPEED_LOW:
-// 		ep0_ctx->ep_info2 |= cpu_to_le32(MAX_PACKET(8));
-// 		ZF_LOGE("Setting Packet size = 8bytes\n");
-// 		break;
-// 	default:
-// 		/* New speed? */
-// 		ZF_LOGF("Unsupported speed type");
-// 	}
+	switch (speed) {
+	case USB_SPEED_SUPER:
+		ep0_ctx->ep_info2 |= cpu_to_le32(MAX_PACKET(512));
+		ZF_LOGE("Setting Packet size = 512bytes\n");
+		break;
+	case USB_SPEED_HIGH:
+	/* USB core guesses at a 64-byte max packet first for FS devices */
+	case USB_SPEED_FULL:
+		ep0_ctx->ep_info2 |= cpu_to_le32(MAX_PACKET(64));
+		ZF_LOGE("Setting Packet size = 64bytes\n");
+		break;
+	case USB_SPEED_LOW:
+		ep0_ctx->ep_info2 |= cpu_to_le32(MAX_PACKET(8));
+		ZF_LOGE("Setting Packet size = 8bytes\n");
+		break;
+	default:
+		/* New speed? */
+		ZF_LOGF("Unsupported speed type");
+	}
 
-// 	/* EP 0 can handle "burst" sizes of 1, so Max Burst Size field is 0 */
-// 	ep0_ctx->ep_info2 |= cpu_to_le32(MAX_BURST(0) | ERROR_COUNT(3));
+	/* EP 0 can handle "burst" sizes of 1, so Max Burst Size field is 0 */
+	ep0_ctx->ep_info2 |= cpu_to_le32(MAX_BURST(0) | ERROR_COUNT(3));
 
-// 	trb_64 = virt_dev->eps[0].ring->first_seg->dma;
-// 	ep0_ctx->deq = cpu_to_le64(trb_64 | virt_dev->eps[0].ring->cycle_state);
+	trb_64 = virt_dev->eps[0].ring->first_seg->dma;
+	ep0_ctx->deq = cpu_to_le64(trb_64 | virt_dev->eps[0].ring->cycle_state);
 
-// 	/*
-// 	 * xHCI spec 6.2.3:
-// 	 * software shall set 'Average TRB Length' to 8 for control endpoints.
-// 	 */
-// 	ep0_ctx->tx_info = cpu_to_le32(EP_AVG_TRB_LENGTH(8));
+	/*
+	 * xHCI spec 6.2.3:
+	 * software shall set 'Average TRB Length' to 8 for control endpoints.
+	 */
+	ep0_ctx->tx_info = cpu_to_le32(EP_AVG_TRB_LENGTH(8));
 
-// 	/* Steps 7 and 8 were done in xhci_alloc_virt_device() */
+	/* Steps 7 and 8 were done in xhci_alloc_virt_device() */
 
-// 	xhci_flush_cache((uintptr_t)ep0_ctx, sizeof(struct xhci_ep_ctx));
-// 	xhci_flush_cache((uintptr_t)slot_ctx, sizeof(struct xhci_slot_ctx));
-// }
+	// xhci_flush_cache((uintptr_t)ep0_ctx, sizeof(struct xhci_ep_ctx));
+	// xhci_flush_cache((uintptr_t)slot_ctx, sizeof(struct xhci_slot_ctx));
+}
