@@ -799,24 +799,23 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
     //     .wIndex        = index,
     //     .wLength       = size
     // };
-	printf("Schedule the xact\n");
-	err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 2, NULL, NULL);
-	if (err < 0) {
-		usb_destroy_xact(udev->dman, xact, 2);
-		usb_free(udev);
-		udev = NULL;
-		ZF_LOGE("USB: Transaction error");
-		return -1;
-	}
+	printf("SKip descriptor xact we need addr first\n");
+	// err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 2, NULL, NULL);
+	// if (err < 0) {
+	// 	usb_destroy_xact(udev->dman, xact, 2);
+	// 	usb_free(udev);
+	// 	udev = NULL;
+	// 	ZF_LOGE("USB: Transaction error");
+	// 	return -1;
+	// }
 
-	udev->ep_ctrl->max_pkt = d_desc->bMaxPacketSize0;
+	// udev->ep_ctrl->max_pkt = d_desc->bMaxPacketSize0;
 
 
 	/* Find the next available address */
-	printf("Find the next available addr for devlist insert\n");
-	print_descriptor(d_desc);
-	printf("We got the descriptors pausing execution now....\n");
-	while(1);
+	// printf("Find the next available addr for devlist insert\n");
+	// print_descriptor(d_desc);
+	// printf("We got the descriptors pausing execution now....\n");
 	addr = devlist_insert(udev);
 	if (addr < 0) {
 		ZF_LOGE("USB: Too many devices\n");
@@ -828,7 +827,7 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 	}
 
 	/* Set the address */
-	*req = __new_address_req(addr);
+	*req = __new_address_req(2);
 	ZF_LOGE("USB: Setting address to %d\n", addr);
 	err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 1, NULL, NULL);
 	if (err < 0) {
@@ -838,10 +837,12 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 		return -1;
 	}
 
+	ZF_LOGE("SUCCESS GOT addr %p", addr);
 	/* Device has 2ms to start responding to new address */
 	printf("delay 2 ms\n");
 	ps_mdelay(2);
 	udev->addr = addr;
+	while(1);
 
 	/* All settled, start processing standard USB descriptors */
 	ZF_LOGE("USB %d: Retrieving device descriptor\n", udev->addr);
@@ -1219,7 +1220,7 @@ int usb_alloc_xact(ps_dma_man_t * dman, struct xact *xact, int nxact)
 	for (i = 0; i < nxact; i++) {
 		if (xact[i].len) {
 			xact[i].vaddr =
-			    ps_dma_alloc_pinned(dman, xact[i].len, 32, 0,
+			    ps_dma_alloc_pinned(dman, xact[i].len, 0x1000, 0,
 						PS_MEM_NORMAL, &xact[i].paddr);
 			if (xact[i].vaddr == NULL) {
 				usb_destroy_xact(dman, xact, i);

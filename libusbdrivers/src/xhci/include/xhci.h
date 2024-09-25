@@ -1767,7 +1767,7 @@ static inline dma_addr_t xhci_dma_map(struct xhci_ctrl *ctrl, void* addr,
 
 static void* xhci_malloc(struct xhci_ctrl* ctrl, size_t size)
 {
-	void* addr =  ps_dma_alloc(ctrl->dma_man, size, 32, 0, PS_MEM_NORMAL); // 32 align for now
+	void* addr =  ps_dma_alloc(ctrl->dma_man, size, 0x1000, 0, PS_MEM_NORMAL); // 32 align for now
 	ZF_LOGE("malloc returning buffer %p", addr);
 	return addr;
 }

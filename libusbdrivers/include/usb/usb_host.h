@@ -35,12 +35,6 @@ enum usb_endpoint_type {
     EP_INTERRUPT
 };
 
-// from UBOOT DRIVER
-// #define PIPE_ISOCHRONOUS    0U
-// #define PIPE_INTERRUPT      1U
-// #define PIPE_CONTROL        2U
-// #define PIPE_BULK           3U
-
 /* NOTE: do not change the defined order, see USB 2.0 spec(9.6.6) */
 enum usb_endpoint_dir {
     EP_DIR_OUT = 0,

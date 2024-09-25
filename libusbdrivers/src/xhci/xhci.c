@@ -183,14 +183,17 @@ static int xhci_start(struct xhci_hcor *hcor)
 	int ret;
 
 	puts("Starting the controller\n");
+	ZF_LOGE("Read the reg here");
 	temp = xhci_readl(&hcor->or_usbcmd);
 	temp |= (CMD_RUN);
+	ZF_LOGE("Usb cmd is at addr %p", &hcor->or_usbcmd);
 	xhci_writel(&hcor->or_usbcmd, temp);
 
 	/*
 	 * Wait for the HCHalted Status bit to be 0 to indicate the host is
 	 * running.
 	 */
+	ZF_LOGE("WE are going into a handshake");
 	ret = handshake(&hcor->or_usbsts, STS_HALT, 0, XHCI_MAX_HALT_USEC);
 	if (ret)
 		ZF_LOGE("Host took too long to start, "
@@ -545,7 +548,7 @@ static int xhci_configure_endpoints(struct usb_device *udev, bool ctx_change)
 // 			max_ep_flag = ep_flag;
 // 	}
 
-// 	xhci_inval_cache((uintptr_t)out_ctx->bytes, out_ctx->size);
+// 	// xhci_inval_cache((uintptr_t)out_ctx->bytes, out_ctx->size);
 
 // 	/* slot context */
 // 	xhci_slot_copy(ctrl, in_ctx, out_ctx);
@@ -654,6 +657,7 @@ static int xhci_address_device(struct usb_device *udev, int root_portnr)
 	int slot_id = udev->slot_id;
 	union xhci_trb *event;
 
+	ZF_LOGE("Slot id is %d", slot_id);
 	virt_dev = ctrl->devs[slot_id];
 
 	/*
@@ -664,9 +668,10 @@ static int xhci_address_device(struct usb_device *udev, int root_portnr)
 	xhci_setup_addressable_virt_dev(ctrl, udev, root_portnr);
 
 	ctrl_ctx = xhci_get_input_control_ctx(virt_dev->in_ctx);
-	ctrl_ctx->add_flags = cpu_to_le32(SLOT_FLAG | EP0_FLAG);
-	ctrl_ctx->drop_flags = 0;
+	ctrl_ctx->add_flags = cpu_to_le32(SLOT_FLAG | EP0_FLAG); // set the slot and ep0 flag
+	ctrl_ctx->drop_flags = 0; // zero ot drop flags
 
+	ZF_LOGE("Dma addr to queue command is %p", virt_dev->in_ctx->dma);
 	xhci_queue_command(ctrl, virt_dev->in_ctx->dma,
 			   slot_id, 0, TRB_ADDR_DEV);
 	event = xhci_wait_for_event(ctrl, TRB_COMPLETION);
@@ -760,6 +765,7 @@ static int _xhci_alloc_device(struct usb_device *udev)
 
 	ZF_LOGE("Get slot id");
 	udev->slot_id = TRB_TO_SLOT_ID(le32_to_cpu(event->event_cmd.flags));
+	ZF_LOGE("slot id is %d", udev->slot_id);
 
 
 	ZF_LOGE("Ack evnt ");
@@ -1280,8 +1286,6 @@ static int xhci_lowlevel_init(struct xhci_ctrl *ctrl)
 		xhci_reset(hcor);
 		return -ENODEV;
 	}
-	// ZF_LOGE("Pausing execution here...\n");
-	// while(1);
 	/* Zero'ing IRQ control register and IRQ pending register */
 	xhci_writel(&ctrl->ir_set->irq_control, 0x0);
 	xhci_writel(&ctrl->ir_set->irq_pending, 0x0);
@@ -1314,13 +1318,13 @@ static int xhci_submit_control_msg(struct usb_device *udev,
 {
 	struct usb_device *uhop;
 	struct udevice *hub;
-	int root_portnr = 0;
+	int root_portnr = 1;
 
 	// ZF_LOGE("%s: dev='%s', udev=%p, udev->dev='%s', portnr=%d\n", __func__,
 	//       dev->name, udev, udev->dev->name, udev->portnr);
 	// hub = udev->dev;
 
-	// let's assume for now we aren't using the hub FIXME
+	// // let's assume for now we aren't using the hub FIXME
 	// if (device_get_uclass_id(hub) == UCLASS_USB_HUB) {
 	// 	/* Figure out our port number on the root hub */
 	// 	if (usb_hub_is_root_hub(hub)) {
@@ -1469,12 +1473,13 @@ static int xhci_schedule_xact(usb_host_t *hdev, uint8_t addr, int8_t hub_addr,
 		       usb_cb_t cb, void *t)
 {
 
-	struct devrequest *req = (struct devrequest *) &xact[0]; // index 0 is the request
+	struct devrequest *req = (struct devrequest *) xact[0].vaddr; // index 0 is the request
 	struct xhci_ctrl* ctrl = hdev->ctrl;
-	unsigned long pipe = usb_rcvctrlpipe(hdev->drv_dev, 0); // this needs to be double checked could be sus
+
+	unsigned long 	pipe = usb_snddefctrl(hdev->drv_dev);
+	// unsigned long pipe = usb_rcvctrlpipe(hdev->drv_dev, 0); // this needs to be double checked could be sus
 	//make pipe he
 	printf("We're inside of xact scheduling\n");
-
 
 	/*
 	 - udev --> usb device?
@@ -1483,7 +1488,8 @@ static int xhci_schedule_xact(usb_host_t *hdev, uint8_t addr, int8_t hub_addr,
 	 - length --> the legnth of data to write
 	 - setup --> the device request
 	*/
-	return xhci_submit_control_msg(hdev->drv_dev, pipe, (void*)&xact[1], xact[1].len, req);
+	return xhci_submit_control_msg(hdev->drv_dev, pipe, (void*)xact[1].vaddr, xact[1].len, req);
+
 }
 
 // // real init function?

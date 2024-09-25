@@ -412,14 +412,15 @@ static int xhci_scratchpad_alloc(struct xhci_ctrl *ctrl)
 	}
 
 	ctrl->page_size = 1 << (i + 12);
-	buf = memalign(ctrl->page_size, num_sp * ctrl->page_size);
+	// buf = memalign(ctrl->page_size, num_sp * ctrl->page_size);
+	buf = xhci_malloc(ctrl, num_sp * ctrl->page_size);
 	if (!buf)
 		goto fail_sp3;
 	memset(buf, '\0', num_sp * ctrl->page_size);
 	// xhci_flush_cache((uintptr_t)buf, num_sp * ctrl->page_size);
 
 	scratchpad->scratchpad = buf;
-	val_64 = xhci_dma_map(ctrl, &buf, num_sp * ctrl->page_size);
+	val_64 = xhci_dma_map(ctrl, buf, num_sp * ctrl->page_size);
 	// buf = xhci_dma_map(ctrl, &val_64 , num_sp * ctrl->page_size);
 	for (i = 0; i < num_sp; i++) {
 		scratchpad->sp_array[i] = cpu_to_le64(val_64);
@@ -463,7 +464,9 @@ static struct xhci_container_ctx
 		ctx->size += CTX_SIZE(xhci_readl(&ctrl->hccr->cr_hccparams));
 
 	ctx->bytes = xhci_malloc(ctrl, ctx->size);
+	ZF_LOGE("context bytes is at %p", ctx->bytes);
 	ctx->dma = xhci_dma_map(ctrl, ctx->bytes, ctx->size);
+	ZF_LOGE("context dma is at %p", ctx->dma);
 
 	return ctx;
 }
@@ -517,6 +520,7 @@ int xhci_alloc_virt_device(struct xhci_ctrl *ctrl, unsigned int slot_id)
 	byte_64 = virt_dev->out_ctx->dma;
 
 	/* Point to output device context in dcbaa. */
+	ZF_LOGE("putting %p in the dev context pointers", byte_64);
 	ctrl->dcbaa->dev_context_ptrs[slot_id] = cpu_to_le64(byte_64);
 
 	// xhci_flush_cache((uintptr_t)&ctrl->dcbaa->dev_context_ptrs[slot_id],
@@ -688,7 +692,7 @@ struct xhci_ep_ctx *xhci_get_ep_ctx(struct xhci_ctrl *ctrl,
 				    unsigned int ep_index)
 {
 	/* increment ep index by offset of start of ep ctx array */
-	ep_index++;
+	ep_index++; // indeex is 1
 	if (ctx->type == XHCI_CTX_TYPE_INPUT)
 		ep_index++;
 
@@ -752,6 +756,24 @@ void xhci_endpoint_copy(struct xhci_ctrl *ctrl,
 // 	in_slot_ctx->dev_state = out_slot_ctx->dev_state;
 // }
 
+
+
+static void print_ep_ctx(struct xhci_ep_ctx* ctx){
+	printf("ep ctx info 0x%lx\n",ctx->ep_info);
+	printf("ep ctx info2 0x%lx \n",ctx->ep_info2);
+	printf("ep ctx 0x%llx\n", ctx->deq);
+	printf("ep ctx 0x%lx\n", ctx->tx_info);
+
+}
+
+static void print_slot_ctx(struct xhci_slot_ctx* ctx){
+	printf("slot ctx dev info 0x%lx\n", ctx->dev_info);
+	printf("slot ctx dev info2 0x%lx\n", ctx->dev_info2);
+	printf("slot ctx tt info 0x%lx\n", ctx->tt_info);
+	printf("slot ctx dev_state0x%lx\n", ctx->dev_state);
+
+}
+
 // /**
 //  * Setup an xHCI virtual device for a Set Address command
 //  *
@@ -769,10 +791,9 @@ void xhci_setup_addressable_virt_dev(struct xhci_ctrl *ctrl,
 	int slot_id = udev->slot_id;
 	int speed = udev->speed;
 	int route = 0;
-#if defined(DM_USB)
-	struct usb_device *dev = udev;
-	struct usb_hub_device *hub;
-#endif
+	ZF_LOGE("Check speed here %d", udev->speed);
+	// struct usb_device *dev = udev;
+	// struct usb_hub_device *hub;
 
 	virt_dev = ctrl->devs[slot_id];
 
@@ -781,31 +802,29 @@ void xhci_setup_addressable_virt_dev(struct xhci_ctrl *ctrl,
 	slot_ctx = xhci_get_slot_ctx(ctrl, virt_dev->in_ctx);
 
 	/* Only the control endpoint is valid - one endpoint context */
-	slot_ctx->dev_info |= cpu_to_le32(LAST_CTX(1));
+	slot_ctx->dev_info |= cpu_to_le32(LAST_CTX(1)); //set last context filed in slot context
 
-#if defined(DM_USB)
-	/* Calculate the route string for this device */
-	port_num = dev->portnr;
-	while (!usb_hub_is_root_hub(dev->dev)) {
-		hub = dev_get_uclass_priv(dev->dev);
-		/*
-		 * Each hub in the topology is expected to have no more than
-		 * 15 ports in order for the route string of a device to be
-		 * unique. SuperSpeed hubs are restricted to only having 15
-		 * ports, but FS/LS/HS hubs are not. The xHCI specification
-		 * says that if the port number the device is greater than 15,
-		 * that portion of the route string shall be set to 15.
-		 */
-		if (port_num > 15)
-			port_num = 15;
-		route |= port_num << (hub->hub_depth * 4);
-		dev = dev_get_parent_priv(dev->dev);
-		port_num = dev->portnr;
-		dev = dev_get_parent_priv(dev->dev->parent);
-	}
+	// /* Calculate the route string for this device */
+	// port_num = dev->portnr;
+	// while (!usb_hub_is_root_hub(dev->dev)) {
+	// 	hub = dev_get_uclass_priv(dev->dev);
+	// 	/*
+	// 	 * Each hub in the topology is expected to have no more than
+	// 	 * 15 ports in order for the route string of a device to be
+	// 	 * unique. SuperSpeed hubs are restricted to only having 15
+	// 	 * ports, but FS/LS/HS hubs are not. The xHCI specification
+	// 	 * says that if the port number the device is greater than 15,
+	// 	 * that portion of the route string shall be set to 15.
+	// 	 */
+	// 	if (port_num > 15)
+	// 		port_num = 15;
+	// 	route |= port_num << (hub->hub_depth * 4);
+	// 	dev = dev_get_parent_priv(dev->dev);
+	// 	port_num = dev->portnr;
+	// 	dev = dev_get_parent_priv(dev->dev->parent);
+	// }
 
-	ZF_LOGE("route string %x\n", route);
-#endif
+	// ZF_LOGE("route string %x\n", route);
 	slot_ctx->dev_info |= cpu_to_le32(route);
 
 	switch (speed) {
@@ -826,29 +845,27 @@ void xhci_setup_addressable_virt_dev(struct xhci_ctrl *ctrl,
 		ZF_LOGF("Speed was already set you should not be here");
 	}
 
-#if defined(DM_USB)
-	/* Set up TT fields to support FS/LS devices */
-	if (speed == USB_SPEED_LOW || speed == USB_SPEED_FULL) {
-		struct udevice *parent = udev->dev;
+	// /* Set up TT fields to support FS/LS devices */
+	// if (speed == USB_SPEED_LOW || speed == USB_SPEED_FULL) {
+	// 	struct udevice *parent = udev->dev;
 
-		dev = udev;
-		do {
-			port_num = dev->portnr;
-			dev = dev_get_parent_priv(parent);
-			if (usb_hub_is_root_hub(dev->dev))
-				break;
-			parent = dev->dev->parent;
-		} while (dev->speed != USB_SPEED_HIGH);
+	// 	dev = udev;
+	// 	do {
+	// 		port_num = dev->portnr;
+	// 		dev = dev_get_parent_priv(parent);
+	// 		if (usb_hub_is_root_hub(dev->dev))
+	// 			break;
+	// 		parent = dev->dev->parent;
+	// 	} while (dev->speed != USB_SPEED_HIGH);
 
-		if (!usb_hub_is_root_hub(dev->dev)) {
-			hub = dev_get_uclass_priv(dev->dev);
-			if (hub->tt.multi)
-				slot_ctx->dev_info |= cpu_to_le32(DEV_MTT);
-			slot_ctx->tt_info |= cpu_to_le32(TT_PORT(port_num));
-			slot_ctx->tt_info |= cpu_to_le32(TT_SLOT(dev->slot_id));
-		}
-	}
-#endif
+	// 	if (!usb_hub_is_root_hub(dev->dev)) {
+	// 		hub = dev_get_uclass_priv(dev->dev);
+	// 		if (hub->tt.multi)
+	// 			slot_ctx->dev_info |= cpu_to_le32(DEV_MTT);
+	// 		slot_ctx->tt_info |= cpu_to_le32(TT_PORT(port_num));
+	// 		slot_ctx->tt_info |= cpu_to_le32(TT_SLOT(dev->slot_id));
+	// 	}
+	// }
 
 	port_num = hop_portnr;
 	ZF_LOGE("port_num = %d\n", port_num);
@@ -871,7 +888,7 @@ void xhci_setup_addressable_virt_dev(struct xhci_ctrl *ctrl,
 	/* USB core guesses at a 64-byte max packet first for FS devices */
 	case USB_SPEED_FULL:
 		ep0_ctx->ep_info2 |= cpu_to_le32(MAX_PACKET(64));
-		ZF_LOGE("Setting Packet size = 64bytes\n");
+		ZF_LOGE("Setting Packet size to = 64bytes\n");
 		break;
 	case USB_SPEED_LOW:
 		ep0_ctx->ep_info2 |= cpu_to_le32(MAX_PACKET(8));
@@ -896,6 +913,8 @@ void xhci_setup_addressable_virt_dev(struct xhci_ctrl *ctrl,
 
 	/* Steps 7 and 8 were done in xhci_alloc_virt_device() */
 
+	print_ep_ctx(ep0_ctx);
+	print_slot_ctx(slot_ctx);
 	// xhci_flush_cache((uintptr_t)ep0_ctx, sizeof(struct xhci_ep_ctx));
 	// xhci_flush_cache((uintptr_t)slot_ctx, sizeof(struct xhci_slot_ctx));
 }

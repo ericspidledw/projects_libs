@@ -220,8 +220,10 @@ static dma_addr_t queue_trb(struct xhci_ctrl *ctrl, struct xhci_ring *ring,
 
 	trb = &ring->enqueue->generic;
 
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++){
 		trb->field[i] = cpu_to_le32(trb_fields[i]);
+		printf("trb %d is 0x%lx\n", i, trb->field[i]);
+	}
 
 	// xhci_flush_cache((uintptr_t)trb, sizeof(struct xhci_generic_trb));
 
@@ -345,6 +347,7 @@ int xhci_queue_command(struct xhci_ctrl *ctrl, dma_addr_t addr, u32 slot_id,
 	/* Ring the command ring doorbell */
 	ZF_LOGE("XHCI write the doorbell");
 	xhci_writel(&ctrl->dba->doorbell[0], DB_VALUE_HOST);
+	ZF_LOGE("Done writing to the doorbell");
 	return 0;
 }
 
@@ -883,6 +886,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 	union xhci_trb *event;
 	u32 remainder;
 
+	ZF_LOGE("Slot index is %d", slot_id);
 	ZF_LOGE("req=%u (%#x), type=%u (%#x), value=%u (%#x), index=%u\n",
 		req->request, req->request,
 		req->requesttype, req->requesttype,
@@ -890,8 +894,9 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 		le16_to_cpu(req->index));
 
 	ep_index = usb_pipe_ep_index(pipe); // gotta figure out whats going with this pipe?
+	ZF_LOGE("Ep index is %d", ep_index);
 
-	ep_ring = virt_dev->eps[ep_index].ring;
+	ep_ring = virt_dev->eps[ep_index].ring; // grab our ring we allocated before
 
 	/*
 	 * Check to see if the max packet size for the default control
@@ -909,7 +914,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 	struct xhci_ep_ctx *ep_ctx = NULL;
 	ep_ctx = xhci_get_ep_ctx(ctrl, virt_dev->out_ctx, ep_index);
 
-	/* 1 TRB for setup, 1 for status DANG RIGHT */
+	/* 1 TRB for setup, 1 for status*/
 	num_trbs = 2;
 	/*
 	 * Don't need to check if we need additional event data and normal TRBs,
@@ -925,7 +930,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 	 * maintaining multiple TDs/transfer at the same time.
 	 */
 	ret = prepare_ring(ctrl, ep_ring,
-				le32_to_cpu(ep_ctx->ep_info) & EP_STATE_MASK);
+				le32_to_cpu(ep_ctx->ep_info) & EP_STATE_MASK); // we want 1
 
 	if (ret < 0)
 		return ret;
@@ -992,7 +997,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 	if (length > 0) {
 		if (req->requesttype & USB_DIR_IN)
 			field |= TRB_DIR_IN;
-		buf_64 = (u64) xhci_dma_map(ctrl, buffer, length);
+		buf_64 = xhci_dma_map(ctrl, buffer, length);
 
 		trb_fields[0] = lower_32_bits(buf_64);
 		trb_fields[1] = upper_32_bits(buf_64);
