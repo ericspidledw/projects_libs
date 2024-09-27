@@ -661,7 +661,6 @@ static int create_xhci_driver_device(struct usb_dev* udev, struct usb_device* xh
 	xhci_dev->ctrl = udev->ctrl;
 	xhci_dev->speed = USB_SPEED_HIGH;
 	// ZF_LOGE("checking rootdev it is %d", xhci_dev->ctrl->rootdev);
-	ZF_LOGE("leaving crate device driver");
 	return xhci_alloc_device(NULL, xhci_dev);
 }
 
@@ -670,12 +669,12 @@ static int create_xhci_driver_device(struct usb_dev* udev, struct usb_device* xh
  hub == NULL
  host == host from prev fxn
  port == 1
- speed == 0
+ speed == 0 (SPEED LOW ?)
  usb_dev == pointer to usb_dev in prev fxn
 */
-static int
+int
 usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
-			 enum usb_speed speed, struct usb_dev **d)
+			 enum usb_speed speed, struct usb_dev **d, struct usb_device* usb_driver)
 {
 	struct usb_dev *udev = NULL;
 	struct usb_dev *parent = NULL, *child = NULL;
@@ -689,8 +688,8 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 
 	ZF_LOGE("USB: New USB device!\n");
 	udev = (struct usb_dev*)usb_malloc(sizeof(*udev)); // malloc our usb dev
-	xhci_dev = (struct usb_device*) usb_malloc(sizeof(*xhci_dev));
-	if (!udev || !xhci_dev) {
+
+	if (!udev) {
 		ZF_LOGE("USB: No heap memory for new USB device\n");
 		return -1;
 	}
@@ -705,16 +704,17 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 	udev->speed = speed;
 	udev->host = host;
 	udev->dman = host->hdev.dman;
-	// host->hdev.drv_dev = xhci_dev;
 	udev->ctrl = host->hdev.ctrl;
 
-	ZF_LOGE("Entering create driver deivce");
-	create_xhci_driver_device(udev, xhci_dev);
-	ZF_LOGE("Leaving the xhci create device");
+	if(!host->hdev.drv_dev){
+		host->hdev.drv_dev = (struct usb_device*) usb_malloc(sizeof(*host->hdev.drv_dev));
+		assert(host->hdev.drv_dev);
+		host->hdev.drv_dev->ctrl = udev->ctrl;
+		ZF_LOGE("Entering create driver deivce");
+		create_xhci_driver_device(udev, host->hdev.drv_dev);
+		ZF_LOGE("Leaving the xhci create device");
+	}
 
-	host->hdev.drv_dev = (struct usb_device*) usb_malloc(sizeof(*xhci_dev));
-	assert(host->hdev.drv_dev);
-	host->hdev.drv_dev = xhci_dev;
 	/*
 	 * Work out the TT hub for full/low speed devices.
 	 * Assuming all high speed hubs have TT.
@@ -799,7 +799,7 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
     //     .wIndex        = index,
     //     .wLength       = size
     // };
-	printf("SKip descriptor xact we need addr first\n");
+	printf("Skip descriptor xact we need addr first\n");
 	// err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 2, NULL, NULL);
 	// if (err < 0) {
 	// 	usb_destroy_xact(udev->dman, xact, 2);
@@ -826,8 +826,24 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 		return -1;
 	}
 
+	if(usb_driver) {
+		ZF_LOGE("USB driver passed in");
+		*req = __new_address_req(usb_driver->devnum);
+		err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 1, NULL, usb_driver);
+		if (err < 0) {
+			usb_destroy_xact(udev->dman, xact, 2);
+			usb_free(udev);
+			udev = NULL;
+			return -1;
+		}
+		if(!host->hdev.drv_dev->devnum){
+			host->hdev.drv_dev->devnum = addr; // update devnum to our new device address
+		}
+		ZF_LOGE("SUCCESS GOT addr %p", usb_driver->devnum);
+		while(1);
+	}
 	/* Set the address */
-	*req = __new_address_req(2);
+	*req = __new_address_req(addr);
 	ZF_LOGE("USB: Setting address to %d\n", addr);
 	err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 1, NULL, NULL);
 	if (err < 0) {
@@ -836,13 +852,14 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 		udev = NULL;
 		return -1;
 	}
+	if(!host->hdev.drv_dev->devnum){
+		host->hdev.drv_dev->devnum = addr; // update devnum to our new device address
+	}
 
 	ZF_LOGE("SUCCESS GOT addr %p", addr);
 	/* Device has 2ms to start responding to new address */
-	printf("delay 2 ms\n");
 	ps_mdelay(2);
 	udev->addr = addr;
-	while(1);
 
 	/* All settled, start processing standard USB descriptors */
 	ZF_LOGE("USB %d: Retrieving device descriptor\n", udev->addr);
@@ -990,26 +1007,26 @@ usb_init(enum usb_host_id id, ps_io_ops_t * ioops, ps_mutex_ops_t * sync,
 		ZF_LOGE("USB: Platform error\n");
 		return -1;
 	}
-	printf("Entering new device with host\n");
-	err = usb_new_device_with_host(NULL, host, 1, 0, &udev); // pass in NULL, host, 1, 0, pointer to usb dev
+	// printf("Entering new device with host\n");
+	err = usb_new_device_with_host(NULL, host, 1, 0, &udev, NULL); // pass in NULL, host, 1, 0, pointer to usb dev
 	if (err) {
 		ZF_LOGE("USB: Host error\n");
 		return -1;
 	}
 	printf("We made it out of the usb new device with host\n");
 
-	err = usb_hub_driver_bind(udev, &hub);
-	if (err) {
-		ZF_LOGE("USB: Failed to bind a hub");
-		return -1;
-	}
+	// err = usb_hub_driver_bind(udev, &hub);
+	// if (err) {
+	// 	ZF_LOGE("USB: Failed to bind a hub");
+	// 	return -1;
+	// }
 
 	return 0;
 }
 
 int usb_new_device(usb_dev_t *hub, int port, enum usb_speed speed, usb_dev_t **d)
 {
-	return usb_new_device_with_host(hub, hub->host, port, speed, d);
+	return usb_new_device_with_host(hub, hub->host, port, speed, d, NULL);
 }
 
 usb_dev_t *usb_get_device(usb_t * host, int addr)

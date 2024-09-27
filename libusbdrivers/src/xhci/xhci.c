@@ -27,6 +27,7 @@
 // // #include <malloc.h>
 #include <usb.h>
 #include <xhci.h>
+#include <usb/usb.h>
 // // #include <usb/xhci.h>
 // // #include <watchdog.h>
 // // #include <asm/byteorder.h>
@@ -132,6 +133,7 @@ int usb_maxpacket(struct usb_device *dev, unsigned long pipe)
 struct xhci_ctrl *xhci_get_ctrl(struct usb_device *udev)
 {
 
+	assert(udev->ctrl);
 	return udev->ctrl;
 	// struct udevice *dev;
 	// ZF_LOGF("Unimplemented");
@@ -185,7 +187,7 @@ static int xhci_start(struct xhci_hcor *hcor)
 	puts("Starting the controller\n");
 	ZF_LOGE("Read the reg here");
 	temp = xhci_readl(&hcor->or_usbcmd);
-	temp |= (CMD_RUN);
+	temp |= (CMD_RUN) | (1 << 2);
 	ZF_LOGE("Usb cmd is at addr %p", &hcor->or_usbcmd);
 	xhci_writel(&hcor->or_usbcmd, temp);
 
@@ -665,6 +667,7 @@ static int xhci_address_device(struct usb_device *udev, int root_portnr)
 	 * so setting up the slot context.
 	 */
 	ZF_LOGE("Setting up addressable devices %p\n", ctrl->dcbaa);
+	ZF_LOGE("port address is %d", root_portnr);
 	xhci_setup_addressable_virt_dev(ctrl, udev, root_portnr);
 
 	ctrl_ctx = xhci_get_input_control_ctx(virt_dev->in_ctx);
@@ -751,10 +754,10 @@ static int _xhci_alloc_device(struct usb_device *udev)
 	 * stuff.
 	 */
 	ZF_LOGE("Check rootdev");
-	// if (ctrl->rootdev == 0) {
-	// 	udev->speed = USB_SPEED_SUPER;
-	// 	return 0;
-	// }
+	if (ctrl->rootdev == 0) {
+		udev->speed = USB_SPEED_SUPER;
+		return 0;
+	}
 
 	ZF_LOGE("Queue command");
 	xhci_queue_command(ctrl, 0, 0, 0, TRB_ENABLE_SLOT);
@@ -768,7 +771,7 @@ static int _xhci_alloc_device(struct usb_device *udev)
 	ZF_LOGE("slot id is %d", udev->slot_id);
 
 
-	ZF_LOGE("Ack evnt ");
+	ZF_LOGE("Ack evnt");
 	xhci_acknowledge_event(ctrl);
 
 	ZF_LOGE("Alloc virt device ");
@@ -998,8 +1001,9 @@ static int xhci_submit_root(struct usb_device *udev, unsigned long pipe,
 		}
 		break;
 	case USB_REQ_SET_ADDRESS | (USB_RECIP_DEVICE << 8):
-		ZF_LOGE("USB_REQ_SET_ADDRESS\n");
+		ZF_LOGE("USB_REQ_SET_ADDRESS rootdev preset is %d\n", ctrl->rootdev);
 		ctrl->rootdev = le16_to_cpu(req->value);
+		ZF_LOGE("Ctrl rootdev after is %d", ctrl->rootdev);
 		break;
 	case DeviceOutRequest | USB_REQ_SET_CONFIGURATION:
 		/* Do nothing */
@@ -1214,6 +1218,7 @@ static int _xhci_submit_control_msg(struct usb_device *udev, unsigned long pipe,
 				    struct devrequest *setup, int root_portnr)
 {
 	struct xhci_ctrl *ctrl = xhci_get_ctrl(udev); // let's add ctrl to our udev struct...
+	assert(ctrl);
 	int ret = 0;
 
 	if (usb_pipetype(pipe) != 2) { // check pipe is control  (it needs to be for this)
@@ -1221,10 +1226,10 @@ static int _xhci_submit_control_msg(struct usb_device *udev, unsigned long pipe,
 		return -EINVAL;
 	}
 
-	// if (usb_pipedevice(pipe) == ctrl->rootdev)
-	// return xhci_submit_root(udev, pipe, buffer, setup);
+	ZF_LOGE("pipe device is %d and ctrl root dev is %d", usb_pipedevice(pipe), ctrl->rootdev);
+	if (usb_pipedevice(pipe) == ctrl->rootdev)
+	return xhci_submit_root(udev, pipe, buffer, setup);
 
-	// ZF_LOGF("Should be root device making call for now");
 	if (setup->request == USB_REQ_SET_ADDRESS &&
 	   (setup->requesttype & USB_TYPE_MASK) == USB_TYPE_STANDARD)
 		return xhci_address_device(udev, root_portnr); // set the address of the device
@@ -1282,13 +1287,15 @@ static int xhci_lowlevel_init(struct xhci_ctrl *ctrl)
 	// 	put_unaligned(get_unaligned(&ctrl->hub_desc.wHubCharacteristics)
 	// 			| 0x01, &ctrl->hub_desc.wHubCharacteristics);
 
+	xhci_writel(&ctrl->ir_set->irq_control, 0x000003E8U); // zero out the IRQ pending/control?
+	xhci_writel(&ctrl->ir_set->irq_pending, 0x2); // IE enable
+
 	if (xhci_start(hcor)) {
 		xhci_reset(hcor);
 		return -ENODEV;
 	}
 	/* Zero'ing IRQ control register and IRQ pending register */
-	xhci_writel(&ctrl->ir_set->irq_control, 0x0);
-	xhci_writel(&ctrl->ir_set->irq_pending, 0x0);
+
 
 	reg = HC_VERSION(xhci_readl(&hccr->cr_capbase));
 	printf("USB XHCI %x.%02x\n", reg >> 8, reg & 0xff);
@@ -1316,9 +1323,10 @@ static int xhci_submit_control_msg(struct usb_device *udev,
 				   unsigned long pipe, void *buffer, int length,
 				   struct devrequest *setup)
 {
+	ZF_LOGE("in submit control msg");
 	struct usb_device *uhop;
 	struct udevice *hub;
-	int root_portnr = 1;
+	int root_portnr = udev->devnum;
 
 	// ZF_LOGE("%s: dev='%s', udev=%p, udev->dev='%s', portnr=%d\n", __func__,
 	//       dev->name, udev, udev->dev->name, udev->portnr);
@@ -1449,8 +1457,127 @@ int xhci_alloc_device(struct udevice *dev, struct usb_device *udev)
 // 	return 0;
 // }
 
-static void xhci_handle_irq(usb_host_t *hdev){
-	ZF_LOGE("We got a USB interrupt!!!");
+
+#define TRB_TO_PORT(trb) ((trb >> 24 ) & (0xff))
+
+static trb_type xhci_get_trb_type(union xhci_trb* trb){
+	return TRB_FIELD_TO_TYPE(le32_to_cpu(trb->event_cmd.flags));
+}
+
+#define PORT_CHANGE (1 << 4)
+#define PORT_CHANGE_IRQ(reg)  (reg & PORT_CHANGE)
+#define PORT_ENABLED(status) (status & 0x2)
+#define PORT_POLLING(status) ((status >> 5))
+#define PORT_CCS 0x1
+static void xhci_handle_irq(usb_host_t *hdev) {
+
+	ZF_LOGE("We in the IRQ");
+	struct xhci_ctrl* ctrl = hdev->ctrl;
+
+	// if(PORT_CHANGE_IRQ(ctrl->hcor->or_usbsts)){
+	// 	uint32_t portsc = ctrl->hcor->portregs->or_portsc;
+	// 	ZF_LOGE("PORT CHANGE DETECTED with value of 0x%x", portsc);
+	// 	for(int i = 0; i < MAX_HC_PORTS; i++){
+	// 		uint32_t reg = ctrl->hcor->portregs[i].or_portsc;
+	// 		ZF_LOGE("Reg %d is 0x%lx", i, reg);
+	// 	}
+	// }
+
+	int event_loop = 0;
+	int err;
+	u64 temp;
+
+	// xhci_clear_interrupt_pending(ir); // do I need to clear? we'll check
+
+	/* Event ring hasn't been allocated yet. */
+	if (!ctrl->event_ring || !ctrl->event_ring->dequeue) {
+		ZF_LOGE("ERROR interrupter event ring has not been setup\n");
+		return -ENOMEM;
+	}
+
+
+	// we'll check this eventually....
+	// if (xhci->xhc_state & XHCI_STATE_DYING ||
+	//     xhci->xhc_state & XHCI_STATE_HALTED) {
+	// 	xhci_dbg(xhci, "xHCI dying, ignoring interrupt. Shouldn't IRQs be disabled?\n");
+
+	// 	/* Clear the event handler busy flag (RW1C) */
+	// 	temp = xhci_read_64(xhci, &ir->ir_set->erst_dequeue);
+	// 	xhci_write_64(xhci, temp | ERST_EHB, &ir->ir_set->erst_dequeue);
+	// 	return -ENODEV;
+	// }
+
+	/* Process all OS owned event TRBs on this event ring */
+	while (event_ready(ctrl)) { /// while we have an event...
+		trb_type transfer_type = xhci_get_trb_type(ctrl->event_ring->dequeue);
+
+		union xhci_trb* trb = xhci_wait_for_event(ctrl, transfer_type); // probably can use type none since we don't know whats coming
+		switch(transfer_type){
+			case TRB_PORT_STATUS: {
+			struct usb_device *usb_device = usb_malloc(sizeof(*usb_device));
+			struct usb_dev *sel4_usb_dev = usb_malloc(sizeof(*usb_device));
+			int port_nr = ((trb->event_cmd.cmd_trb >> 24) & (0xff));
+			uint32_t port_status = ctrl->hcor->portregs[port_nr - 1].or_portsc;
+			if(port_status & PORT_CCS){
+				// use the port to allocate the stuff
+				struct usb_device *udev;
+				if(!PORT_ENABLED(port_status)){
+					xhci_writel(&ctrl->hcor->portregs[port_nr - 1].or_portsc, port_status | (1 << 4));
+				}
+				while(!PORT_ENABLED(port_status) && PORT_POLLING(port_status)) // USB 2.0 controller
+				{
+					union xhci_trb* trb2 =xhci_wait_for_event(ctrl, TRB_PORT_STATUS);
+					xhci_acknowledge_event(ctrl);
+					port_status = ctrl->hcor->portregs[port_nr - 1].or_portsc;
+					ZF_LOGE("Port status is now 0x%x and returned trb 0x%lx", port_status, trb2->event_cmd.cmd_trb);
+					udelay(200 * 1000); // probbaly not
+				}
+				usb_device->ctrl = ctrl;
+				int rc = xhci_alloc_device(NULL, usb_device);
+				if(rc){
+					ZF_LOGE("Error allocting device for port %d", port_nr);
+				}
+				usb_device->devnum = port_nr - 1; // does this need to be -1?
+				usb_device-> speed = 3;
+				// xhci_alloc_device()
+				usb_new_device_with_host(NULL, hdev, port_nr, 3, &sel4_usb_dev, usb_device);
+			}
+			else {
+				ZF_LOGE("USB unplug event detected");
+			}
+			// ZF_LOGE("We got a trb port status on port %d and status 0x%x", port_nr, port_status);
+			break;
+			}
+
+			default:
+			ZF_LOGE("Unhandled TRB event for now");
+			break;
+		}
+		while(1);
+		// err = xhci_handle_event_trb(xhci, ir, ir->event_ring->dequeue);
+
+		/*
+		 * If half a segment of events have been handled in one go then
+		 * update ERDP, and force isoc trbs to interrupt more often
+		 */
+		// if (event_loop++ > TRBS_PER_SEGMENT / 2) {
+		// 	xhci_update_erst_dequeue(xhci, ir, false);
+
+		// 	if (ir->isoc_bei_interval > AVOID_BEI_INTERVAL_MIN)
+		// 		ir->isoc_bei_interval = ir->isoc_bei_interval / 2;
+
+		// 	event_loop = 0;
+		// }
+
+		// /* Update SW event ring dequeue pointer */
+		// inc_deq(xhci, ir->event_ring);
+
+		// if (err)
+		// 	break;
+	}
+
+	// xhci_update_erst_dequeue(xhci, ir, true);
+
 }
 
 
@@ -1472,11 +1599,22 @@ static int xhci_schedule_xact(usb_host_t *hdev, uint8_t addr, int8_t hub_addr,
 		       struct endpoint *ep, struct xact *xact, int nxact,
 		       usb_cb_t cb, void *t)
 {
-
+	struct usb_device* dev = usb_malloc(sizeof(*dev));
+	if(t == NULL) {
+		dev = hdev->drv_dev;
+	}
+	else {
+		dev = (struct usb_device*) t;
+	}
 	struct devrequest *req = (struct devrequest *) xact[0].vaddr; // index 0 is the request
 	struct xhci_ctrl* ctrl = hdev->ctrl;
-
-	unsigned long 	pipe = usb_snddefctrl(hdev->drv_dev);
+	unsigned long pipe = 0;
+	if(req->requesttype & USB_DIR_IN){
+		pipe = usb_rcvctrlpipe(dev, 0); // maybe should be usb_rcvctrlpipe not def ?
+	}
+	else{
+		pipe = usb_sndctrlpipe(dev, 0);
+	}
 	// unsigned long pipe = usb_rcvctrlpipe(hdev->drv_dev, 0); // this needs to be double checked could be sus
 	//make pipe he
 	printf("We're inside of xact scheduling\n");
@@ -1488,7 +1626,7 @@ static int xhci_schedule_xact(usb_host_t *hdev, uint8_t addr, int8_t hub_addr,
 	 - length --> the legnth of data to write
 	 - setup --> the device request
 	*/
-	return xhci_submit_control_msg(hdev->drv_dev, pipe, (void*)xact[1].vaddr, xact[1].len, req);
+	return xhci_submit_control_msg(dev, pipe, (void*)xact[1].vaddr, xact[1].len, req);
 
 }
 
@@ -1529,6 +1667,7 @@ int xhci_host_init(usb_host_t *hdev, uintptr_t regs,
 	// hdev->cancel_xact = xhci_cancel_xact;
 	hdev->handle_irq = xhci_handle_irq;
 	hdev->ctrl = ctrl;
+
 
 	printf("leaving the host controller init error free\n");
 	return 0;

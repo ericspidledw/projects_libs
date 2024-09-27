@@ -328,6 +328,10 @@ int usb_init(enum usb_host_id id, ps_io_ops_t* ioops, ps_mutex_ops_t *sync, usb_
 int usb_new_device(usb_dev_t *hub, int port,
                    enum usb_speed speed, usb_dev_t **d);
 
+int
+usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
+			 enum usb_speed speed, struct usb_dev **d, struct usb_device* usb_driver);
+
 /** A call back for the configuration parser. This function is
  * called for each descriptor.
  * @param[in] token An unmodified token as passed to the

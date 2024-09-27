@@ -466,7 +466,7 @@ void xhci_acknowledge_event(struct xhci_ctrl *ctrl)
 //  * @param ctrl	Host controller data structure
 //  * Return: 0 if failure else 1 on success
 //  */
-static int event_ready(struct xhci_ctrl *ctrl)
+int event_ready(struct xhci_ctrl *ctrl)
 {
 	union xhci_trb *event;
 

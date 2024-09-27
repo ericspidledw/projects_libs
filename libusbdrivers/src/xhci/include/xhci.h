@@ -715,8 +715,8 @@ struct usb_config {
 * The HCD (Linux) processes those events and  updates the dequeue pointer.
 */
 struct xhci_intr_reg {
-	volatile __le32	irq_pending;
-	volatile __le32	irq_control;
+	volatile __le32	irq_pending; // IMAN
+	volatile __le32	irq_control; // IMOD
 	volatile __le32	erst_size;
 	volatile __le32	rsvd;
 	volatile __le64	erst_base;
@@ -1424,6 +1424,8 @@ struct xhci_segment {
 	dma_addr_t		dma;
 };
 
+
+
 struct xhci_ring {
 	struct xhci_segment	*first_seg;
 	union  xhci_trb		*enqueue;
@@ -1716,6 +1718,7 @@ int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
 int usb_maxpacket(struct usb_device *dev, unsigned long pipe);
 void udelay(uint64_t us);
 uint64_t timeout_time();
+int event_ready(struct xhci_ctrl *ctrl);
 
 
 
