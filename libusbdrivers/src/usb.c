@@ -644,12 +644,12 @@ static void print_descriptor(struct device_desc* desc){
 	printf(" Sub class is %d\n", desc->bDeviceSubClass);
 	printf(" Device protocol is %d\n", desc->bDeviceProtocol);
 	printf(" MaxPacketSize is %d\n", desc->bMaxPacketSize0);
-	printf(" Id Vendor is %d\n", desc->idVendor);
-	printf(" Id Product is %d\n", desc->idProduct);
-	printf(" BCD Device is %d\n", desc->bcdDevice);
-	printf(" iManufacturer is %d\n", desc->iManufacturer);
-	printf(" iProduct is %d\n", desc->iProduct);
-	printf(" iSerialNumber is %d\n", desc->iSerialNumber);
+	printf(" Id Vendor is 0x%lx\n", desc->idVendor);
+	printf(" Id Product is 0x%lx\n", desc->idProduct);
+	printf(" BCD Device is 0x%lx\n", desc->bcdDevice);
+	printf(" iManufacturer is %lx\n", desc->iManufacturer);
+	printf(" iProduct is %lx\n", desc->iProduct);
+	printf(" iSerialNumber is %lx\n", desc->iSerialNumber);
 	printf("num configs is %d\n", desc->bNumConfigurations);
 
 }
@@ -836,11 +836,36 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 			udev = NULL;
 			return -1;
 		}
-		if(!host->hdev.drv_dev->devnum){
-			host->hdev.drv_dev->devnum = addr; // update devnum to our new device address
-		}
+
 		ZF_LOGE("SUCCESS GOT addr %p", usb_driver->devnum);
+		ps_mdelay(2);
+		ZF_LOGE("USB %d: Retrieving device descriptor\n", udev->addr);
+
+		usb_driver->epmaxpacketin[0] = 64; // try hard codin first...
+		// /* Read max packet size descriptors */
+		// xact[1].len = 8;
+		// *req = __new_desc_req(DEVICE, 8);
+		// err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 2, NULL, usb_driver);
+		// print_descriptor(d_desc);
+
+		// ZF_LOGE("Got max packet desc...");
+		// while(1);
+
+
+		/* Read full descriptors */
+		xact[1].len = sizeof(*d_desc);
+		*req = __new_desc_req(DEVICE, sizeof(*d_desc));
+		err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 2, NULL, usb_driver);
+		if (err < 0) {
+			usb_destroy_xact(udev->dman, xact, 2);
+			usb_free(udev);
+			udev = NULL;
+			return -1;
+		}
+		ZF_LOGE("Got descriptors");
+		print_descriptor(d_desc);
 		while(1);
+
 	}
 	/* Set the address */
 	*req = __new_address_req(addr);

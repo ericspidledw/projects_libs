@@ -1537,8 +1537,8 @@ static void xhci_handle_irq(usb_host_t *hdev) {
 				if(rc){
 					ZF_LOGE("Error allocting device for port %d", port_nr);
 				}
-				usb_device->devnum = port_nr - 1; // does this need to be -1?
-				usb_device-> speed = 3;
+				usb_device->devnum = port_nr; // does this need to be -1?
+				usb_device->speed = 2;
 				// xhci_alloc_device()
 				usb_new_device_with_host(NULL, hdev, port_nr, 3, &sel4_usb_dev, usb_device);
 			}

@@ -1045,8 +1045,9 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 
 	/* Invalidate buffer to make it available to usb-core */
 	if (length > 0) {
+		ZF_LOGE("Giving buffer back for now skip");
 		// xhci_inval_cache((uintptr_t)buffer, length);
-		xhci_dma_unmap(ctrl, buf_64, length);
+		// xhci_dma_unmap(ctrl, buf_64, length);
 	}
 
 	if (GET_COMP_CODE(le32_to_cpu(event->trans_event.transfer_len))
