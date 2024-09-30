@@ -347,10 +347,14 @@ int usb_pl2303_read(usb_dev_t *udev, void *buf, int len)
 		ZF_LOGF("Out of DMA memory\n");
 	}
 
+    ZF_LOGE("Reading %d bytes", len);
+
 	err = usbdev_schedule_xact(udev, dev->ep_in, &xact, 1, NULL, NULL);
 	if (err) {
 		ZF_LOGF("Transaction error\n");
 	}
+
+    ZF_LOGE("err: %d", err);
 
 	memcpy(buf, xact_get_vaddr(&xact), len);
 
@@ -358,4 +362,3 @@ int usb_pl2303_read(usb_dev_t *udev, void *buf, int len)
 
 	return len - err;
 }
-

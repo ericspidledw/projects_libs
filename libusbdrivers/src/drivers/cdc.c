@@ -229,7 +229,7 @@ int usb_cdc_bind(usb_dev_t *udev)
 	}
 
 	class = usbdev_get_class(udev);
-	if (class != USB_CLASS_CDCDATA && class != USB_CLASS_COMM) {
+	if (class != USB_CLASS_CDCDATA && class != USB_CLASS_COMM && class != 0xFF) {
 		ZF_LOGD("Not a CDC device(%d)\n", class);
 		free(&cdc->read_buf);
 		// circ_buf_free(&cdc->read_buf);
@@ -481,4 +481,3 @@ void acm_send_break(usb_dev_t *udev, uint16_t us)
 	usb_cdc_mgmt_msg(cdc, USB_DIR_OUT | USB_TYPE_CLS | USB_RCPT_INTERFACE,
 			SEND_BREAK, us, NULL, 0);
 }
-

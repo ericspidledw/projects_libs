@@ -3,6 +3,9 @@
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
+
+#define ZF_LOG_LEVEL 0
+
 #include <stdio.h>
 #include <stdint.h>
 

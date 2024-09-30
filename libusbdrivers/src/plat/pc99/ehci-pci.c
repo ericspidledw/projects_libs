@@ -15,7 +15,7 @@
 #define USBLEGSUP_OS         BIT(24)
 #define USBLEGSUP_BIOS       BIT(16)
 #define USBLEGSUP_NEXT_SHF   8
-#define USBLEGSUP_NEXT_MASK  0xFF 
+#define USBLEGSUP_NEXT_MASK  0xFF
 #define USBLEGSUP_ID_SHF     BIT(0)
 #define USBLEGSUP_ID_MASK    0xFF
 
@@ -65,9 +65,16 @@ static uintptr_t ehci_pci_init(uint16_t vid, uint16_t did,
 
 	/* Find the device */
 	libpci_scan(io_ops->io_port_ops);
-	dev = libpci_find_device(vid, did);
+	/* dev = libpci_find_device(vid, did); */
+
+    dev = libpci_find_device_bdf(0, 0x1d, 0);
+
 	if (dev) {
+        ZF_LOGE("bdf: %x %x %x", dev->bus, dev->dev, dev->fun);
+
 		libpci_read_ioconfig(&dev->cfg, dev->bus, dev->dev, dev->fun);
+        ZF_LOGE("0x%x", 				dev->cfg.base_addr[0]);
+        ZF_LOGE("0x%x", 				dev->cfg.base_addr_size[0]);
 		/* Map device memory */
 		cap_regs = MAP_DEVICE(io_ops,
 				dev->cfg.base_addr[0],
@@ -112,7 +119,7 @@ usb_host_init(enum usb_host_id id, ps_io_ops_t* io_ops, ps_mutex_ops_t *sync,
 	if (id < 0 || id > USB_NHOSTS) {
 		return -1;
 	}
-	
+
 	if (!io_ops || !hdev) {
 		ZF_LOGF("Invalid arguments\n");
 	}
@@ -174,4 +181,3 @@ usb_host_irqs(usb_host_t* host, int* nirqs)
 	host->irqs = &_irq_line;
 	return host->irqs;
 }
-
