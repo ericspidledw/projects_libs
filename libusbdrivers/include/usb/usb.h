@@ -91,6 +91,7 @@ struct usb_dev {
     struct endpoint *ep[USB_MAX_EPS]; // Data endpoints of the device
 
     struct xhci_ctrl* ctrl;
+    struct usb_device* drv_dev;
 
     /* For device lists */
     struct usb_dev      *next;

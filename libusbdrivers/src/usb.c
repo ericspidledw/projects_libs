@@ -36,6 +36,32 @@
 #define XHCI_USB_VID 0x8086
 #define XHCI_USB_DID 0xa36d
 
+static void print_config_desc(struct config_desc* cd)
+{
+	ZF_LOGE("--------------DUMPING CONFIG DESC--------------");
+	printf("length is 0x%x\n", cd->bLength);
+	printf("desc type is 0x%x\n", cd->bDescriptorType);
+	printf("total length is 0x%x\n", cd->wTotalLength);
+	printf("num interfaces is 0x%x\n", cd->bNumInterfaces);
+	printf("configvalue is 0x%x\n", cd->bConfigurationValue);
+	printf("config index  is 0x%x\n", cd->iConfigurationIndex);
+	printf(" attributes is 0x%x\n", cd->bmAttributes);
+	printf(" max power is 0x%x\n", cd->bMaxPower);
+	ZF_LOGE("----------------------------");
+
+}
+
+static void print_anon_desc(struct anon_desc* ad)
+{
+	ZF_LOGE("-------------DUMPING ANON DESC ---------------");
+	printf("anon desc type 0x%x\n", ad->bDescriptorType);
+	printf("anon length 0x%x\n", ad->bLength);
+	ZF_LOGE("----------------------------");
+}
+
+
+
+
 const char *usb_class_get_description(enum usb_class usb_class)
 {
 	switch (usb_class) {
@@ -126,7 +152,8 @@ static void devlist_init(usb_t * host)
 /* Insert a device into the list, return the index at which it was inserted */
 static int devlist_insert(struct usb_dev *d)
 {
-	usb_t *host = d->host;
+	usb_t *host = d->host; // we just need the host,
+	ZF_LOGE("Host in insert is %p", host);
 	int i = host->next_addr;
 	/* Early exit */
 	if (host->addrbm == (1ULL << NUM_DEVICES) - 1) {
@@ -142,17 +169,22 @@ static int devlist_insert(struct usb_dev *d)
 		}
 	}
 	/* Add the device to the list */
-	SGLIB_LIST_ADD(struct usb_dev, host->devlist, d, next);
+	ZF_LOGE("inserting device %p at index %d", d,  i);
+	// type is unsued but usb_dev, host->devlist is the list, device is elem, next?
+	SGLIB_LIST_ADD(struct usb_dev, host->devlist, d, next); //
 	host->addrbm |= (1 << i);
+	ZF_LOGE("HOST addrbm is 0x%lx", host->addrbm);
 
 	/* Update the next address for next insertion */
 	if ((i + 1) == NUM_DEVICES) {
+		ZF_LOGE("Circular loop we overwrote first index");
 		host->next_addr = 1;
 	} else {
 		host->next_addr = i + 1;
 	}
 
 	/* return address */
+	ZF_LOGE("returning index %d", i);
 	return i;
 }
 
@@ -171,17 +203,21 @@ static void devlist_remove(struct usb_dev *d)
 /* Retrieve a device from the list */
 static struct usb_dev *devlist_at(usb_t *host, int addr)
 {
+	int count = 0;
 	struct usb_dev *d;
 	if (addr < 0 || addr > NUM_DEVICES) {
 		ZF_LOGW("USB: Device not found\n");
 	}
 
 	for (d = host->devlist; d != NULL; d = d->next) {
+		// ZF_LOGE("Count is %d and addr is %x", count++, addr);
+		// ZF_LOGE("D is %p and d next is %p", d, d->next);
 		if (d->addr == addr) {
 			return d;
 		}
 	}
 
+	// ZF_LOGE("We return null");
 	return NULL;
 }
 
@@ -527,7 +563,7 @@ static int
 parse_config(struct usb_dev *udev, struct anon_desc *d, int tot_len,
 	     usb_config_cb cb, void *t)
 {
-	int cfg = -1;
+	int cfg = -1; // WE ARE HERE RN PARSING
 	int iface = -1;
 	struct anon_desc *usrd = NULL;
 	struct endpoint_desc *edsc;
@@ -548,7 +584,7 @@ parse_config(struct usb_dev *udev, struct anon_desc *d, int tot_len,
 		/* Copy in for the sake of alignment */
 		if (buf_len < d->bLength) {
 			if (usrd) {
-				usb_free(usrd);
+				usb_free(usrd); // reset buffer?
 			}
 			usrd = usb_malloc(d->bLength);
 			if (usrd == NULL) {
@@ -563,6 +599,7 @@ parse_config(struct usb_dev *udev, struct anon_desc *d, int tot_len,
 		switch (d->bDescriptorType) {
 		case CONFIGURATION:
 			cfg = ((struct config_desc *)usrd)->bConfigurationValue;
+			print_config_desc((struct config_desc *)usrd);
 			iface = -1;
 			break;
 		case INTERFACE:
@@ -816,6 +853,7 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 	// printf("Find the next available addr for devlist insert\n");
 	// print_descriptor(d_desc);
 	// printf("We got the descriptors pausing execution now....\n");
+	if(!usb_driver){
 	addr = devlist_insert(udev);
 	if (addr < 0) {
 		ZF_LOGE("USB: Too many devices\n");
@@ -825,11 +863,14 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 		udev = NULL;
 		return -1;
 	}
+	}
 
 	if(usb_driver) {
 		ZF_LOGE("USB driver passed in");
+		udev->drv_dev = usb_driver;
+		udev->addr = usb_driver->devnum;
 		*req = __new_address_req(usb_driver->devnum);
-		err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 1, NULL, usb_driver);
+		err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 1, NULL, NULL);
 		if (err < 0) {
 			usb_destroy_xact(udev->dman, xact, 2);
 			usb_free(udev);
@@ -838,7 +879,7 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 		}
 
 		ZF_LOGE("SUCCESS GOT addr %p", usb_driver->devnum);
-		ps_mdelay(2);
+		ps_udelay(1000 * 2); // 2ms delay
 		ZF_LOGE("USB %d: Retrieving device descriptor\n", udev->addr);
 
 		usb_driver->epmaxpacketin[0] = 64; // try hard codin first...
@@ -855,7 +896,7 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 		/* Read full descriptors */
 		xact[1].len = sizeof(*d_desc);
 		*req = __new_desc_req(DEVICE, sizeof(*d_desc));
-		err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 2, NULL, usb_driver);
+		err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 2, NULL, NULL);
 		if (err < 0) {
 			usb_destroy_xact(udev->dman, xact, 2);
 			usb_free(udev);
@@ -864,7 +905,17 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 		}
 		ZF_LOGE("Got descriptors");
 		print_descriptor(d_desc);
-		while(1);
+		udev->prod_id = d_desc->idProduct;
+		udev->vend_id = d_desc->idVendor;
+		udev->class = d_desc->bDeviceClass;
+		ZF_LOGE("udev addr is %d", udev->addr);
+
+		udev->addr = host->next_addr; // this is so hard coded let's just see thopp
+		uint32_t addr = devlist_insert(udev);
+		ZF_LOGE("We inserted the device at 0x%lx", addr);
+		usb_destroy_xact(udev->dman, xact, sizeof(xact) / sizeof(*xact));
+		*d = udev;
+		return 0;
 
 	}
 	/* Set the address */
@@ -1063,6 +1114,7 @@ usb_dev_t *usb_get_device(usb_t * host, int addr)
 	}
 }
 
+
 /*
  * Parsing standard USB descriptors.
  * We don't support multiple configurations, if the device has more than one
@@ -1089,13 +1141,15 @@ int usbdev_parse_config(usb_dev_t *udev, usb_config_cb cb, void *t)
 	}
 	req = xact_get_vaddr(&xact[0]);
 	cd = xact_get_vaddr(&xact[1]);
-	*req = __get_descriptor_req(CONFIGURATION, 0, 0, xact[1].len);
+	*req = __get_descriptor_req(CONFIGURATION, 0, 0, xact[1].len); // fill in first desc to get length
 	err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 2, NULL, NULL);
 	if (err < 0) {
 		usb_destroy_xact(udev->dman, xact, 2);
 		return -1;
 	}
 	tot_len = cd->wTotalLength;
+	// ZF_LOGE("tot len is %d", tot_len);
+	print_config_desc(cd);
 
 	/* Some devices need a pause during initialization */
 	ps_mdelay(100);
@@ -1112,7 +1166,7 @@ int usbdev_parse_config(usb_dev_t *udev, usb_config_cb cb, void *t)
 	}
 	req = xact_get_vaddr(&xact[0]);
 	d = xact_get_vaddr(&xact[1]);
-	*req = __get_descriptor_req(CONFIGURATION, 0, 0, tot_len);
+	*req = __get_descriptor_req(CONFIGURATION, 0, 0, tot_len); // we make a descriptor request of type config
 	err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 2, NULL, NULL);
 	if (err < 0) {
 		usb_destroy_xact(udev->dman, xact,
@@ -1120,6 +1174,7 @@ int usbdev_parse_config(usb_dev_t *udev, usb_config_cb cb, void *t)
 		return -1;
 	}
 	/* Now loop through descriptors */
+	print_anon_desc(d);
 	err = parse_config(udev, d, tot_len, cb, t);
 	usb_destroy_xact(udev->dman, xact, sizeof(xact) / sizeof(*xact));
 	return err;
@@ -1216,6 +1271,10 @@ usbdev_schedule_xact(usb_dev_t *udev, struct endpoint *ep, struct xact *xact,
 	} else {
 		ZF_LOGE("No address for hub");
 		hub_addr = -1;
+	}
+	if(udev->drv_dev){
+		ZF_LOGE("Setting driver device");
+		token = (void*)udev->drv_dev; // assign token value
 	}
 	err =
 	    usb_hcd_schedule(hdev, udev->addr, hub_addr, udev->tt_port,

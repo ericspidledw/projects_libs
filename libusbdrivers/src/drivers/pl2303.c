@@ -53,7 +53,7 @@ pl2303_config_cb(void *token, int cfg, int iface, struct anon_desc *desc)
 	switch (desc->bDescriptorType) {
 	case CONFIGURATION:
 		cdesc = (struct config_desc*)desc;
-		dev->config = cdesc->bConfigurationValue;
+		dev->config = cdesc->bConfigurationValue; // this sets the config to 1
 		break;
 	default:
 		break;
@@ -137,6 +137,9 @@ pl2303_startup_magic(struct usb_dev *udev)
 
 int usb_pl2303_bind(usb_dev_t *udev)
 {
+
+	ZF_LOGE("Yep we're in the pl2303 bind");
+
 	int err;
 	struct pl2303_device *dev;
 	struct xact xact;
@@ -152,11 +155,11 @@ int usb_pl2303_bind(usb_dev_t *udev)
 		return -1;
 	}
 
-	dev->udev = udev;
-	udev->dev_data = (struct udev_priv*)dev;
+	dev->udev = udev; // passing our device to the one passed in.....
+	udev->dev_data = (struct udev_priv*)dev; // right now our dev is the root device????
 
 	/* Parse the descriptors */
-	err = usbdev_parse_config(udev, pl2303_config_cb, dev);
+	err = usbdev_parse_config(udev, pl2303_config_cb, dev); // parse descriptors?
 	if (err) {
 		ZF_LOGF("Invalid descriptors\n");
 	}
@@ -176,13 +179,13 @@ int usb_pl2303_bind(usb_dev_t *udev)
 		}
 	}
 
-	if (udev->vend_id != 0x067b || udev->prod_id != 0x2303) {
+	if (udev->vend_id != 0x067b || udev->prod_id != 0x2303) { //hard coded check for prolific
 		ZF_LOGD("Not a PL2303 device(%u:%u)\n",
 				udev->vend_id, udev->prod_id);
 		return -1;
 	}
 
-	ZF_LOGD("Found PL2303 USB to serial converter!\n");
+	ZF_LOGE("Found PL2303 USB to serial converter!\n");
 
 	/* Activate configuration */
 	xact.len = sizeof(struct usbreq);
@@ -194,16 +197,20 @@ int usb_pl2303_bind(usb_dev_t *udev)
 	/* Fill in the request */
 	xact.type = PID_SETUP;
 	req = xact_get_vaddr(&xact);
-	*req = __set_configuration_req(dev->config);
+	ZF_LOGE("dev config is %d", dev->config);
+	*req = __set_configuration_req(dev->config); /// dev->config??
 
 	/* Send the request to the host */
+	ZF_LOGE("Right before the magic????????");
 	err = usbdev_schedule_xact(udev, udev->ep_ctrl, &xact, 1, NULL, NULL);
 	if (err) {
 		ZF_LOGF("Transaction error\n");
 	}
 	usb_destroy_xact(udev->dman, &xact, 1);
 
+	ZF_LOGE("going into some magic...");
 	pl2303_startup_magic(udev);
+	ZF_LOGE("MAde it out the magic ");
 
 	/* Allocate interrupt xact */
 	dev->int_xact.type = PID_IN;

@@ -15,6 +15,88 @@
 
 #ifndef _XHCI_XHCI_H_
 #define _XHCI_XHCI_H_
+#include <stddef.h>
+#include <stdint.h>
+
+
+typedef uint32_t 	u32;
+typedef uint32_t 	__u32;
+typedef uint32_t 	__le32;
+typedef uint64_t 	__le64;
+typedef uint8_t 	u8;
+typedef uint8_t 	__u8;
+typedef uint64_t 	u64;
+typedef  uint64_t  	dma_addr_t;
+typedef uint32_t 	__u32;
+typedef uint16_t	u16;
+typedef uint16_t	__le16;
+
+
+#define __raw_readb readb
+#define __raw_readw readw
+#define __raw_readl readl
+#define __raw_writeb writeb
+#define __raw_writew writew
+#define __raw_writel writel
+
+#define upper_32_bits(n) ((u32)(((n) >> 16) >> 16))
+#define lower_32_bits(n) ((u32)(n))
+
+#define cpu_to_le16(x)  ((uint16_t) x)
+#define cpu_to_le32(x)  ((uint32_t) x)
+#define cpu_to_le64(x)  ((uint64_t) x)
+#define le32_to_cpu(x) 	((uint32_t) x)
+#define le16_to_cpu(x) 	((uint16_t) x)
+#define le64_to_cpu(x) 	((uint64_t) x)
+#define __le32_to_cpu(x) 	((uint32_t) x)
+#define __le16_to_cpu(x) 	((uint16_t) x)
+#define __le64_to_cpu(x) 	((uint64_t) x)
+
+
+#define min_t(type, x, y) ({			\
+	type __min1 = (x);			\
+	type __min2 = (y);			\
+	__min1 < __min2 ? __min1: __min2; })
+
+#define max_t(type, x, y) ({			\
+	type __max1 = (x);			\
+	type __max2 = (y);			\
+	__max1 > __max2 ? __max1: __max2; })
+
+#define clamp_t(type, val, lo, hi) min_t(type, max_t(type, val, lo), hi)
+#define clamp_val(val, lo, hi) clamp_t(typeof(val), val, lo, hi)
+#define fls generic_fls
+
+
+static inline int generic_fls(int x)
+{
+	int r = 32;
+
+	if (!x)
+		return 0;
+	if (!(x & 0xffff0000u)) {
+		x <<= 16;
+		r -= 16;
+	}
+	if (!(x & 0xff000000u)) {
+		x <<= 8;
+		r -= 8;
+	}
+	if (!(x & 0xf0000000u)) {
+		x <<= 4;
+		r -= 4;
+	}
+	if (!(x & 0xc0000000u)) {
+		x <<= 2;
+		r -= 2;
+	}
+	if (!(x & 0x80000000u)) {
+		x <<= 1;
+		r -= 1;
+	}
+	return r;
+}
+
 
 #include <usb/usb_host.h>
 #include <xhci_usb.h>
@@ -23,8 +105,7 @@
 #include <usb.h>
 #include "../../services.h"
 #include <string.h>
-#include <stddef.h>
-
+#include <c9.h>
 
 
 #define min(x, y) ({				\
@@ -109,18 +190,7 @@
 #define USB_MAXCHILDREN                        8       /* This is arbitrary */
 #define ARCH_DMA_MINALIGN						32 // for now
 
-typedef uint32_t 	u32;
-typedef uint32_t 	__u32;
-typedef uint32_t 	__le32;
-typedef uint64_t 	__le64;
-typedef uint8_t 	u8;
-typedef uint8_t 	__u8;
-typedef uint64_t 	u64;
-typedef  uint64_t  	dma_addr_t;
-typedef uint32_t 	__u32;
-typedef uint16_t	u16;
-typedef uint16_t	__le16;
-typedef
+
 
 #define NS_TO_US(x)  (x/1000)
 
@@ -403,74 +473,74 @@ struct devrequest {
 	__le16	length;
 } __attribute__ ((packed));
 
-struct usb_interface_descriptor {
-	__u8  bLength;
-	__u8  bDescriptorType;
+// struct usb_interface_descriptor {
+// 	__u8  bLength;
+// 	__u8  bDescriptorType;
 
-	__u8  bInterfaceNumber;
-	__u8  bAlternateSetting;
-	__u8  bNumEndpoints;
-	__u8  bInterfaceClass;
-	__u8  bInterfaceSubClass;
-	__u8  bInterfaceProtocol;
-	__u8  iInterface;
-} __attribute__ ((packed));
+// 	__u8  bInterfaceNumber;
+// 	__u8  bAlternateSetting;
+// 	__u8  bNumEndpoints;
+// 	__u8  bInterfaceClass;
+// 	__u8  bInterfaceSubClass;
+// 	__u8  bInterfaceProtocol;
+// 	__u8  iInterface;
+// } __attribute__ ((packed));
 
 
-/* USB_DT_ENDPOINT: Endpoint descriptor */
-struct usb_endpoint_descriptor {
-	__u8  bLength;
-	__u8  bDescriptorType;
+// /* USB_DT_ENDPOINT: Endpoint descriptor */
+// struct usb_endpoint_descriptor {
+// 	__u8  bLength;
+// 	__u8  bDescriptorType;
 
-	__u8  bEndpointAddress;
-	__u8  bmAttributes;
-	__le16 wMaxPacketSize;
-	__u8  bInterval;
+// 	__u8  bEndpointAddress;
+// 	__u8  bmAttributes;
+// 	__le16 wMaxPacketSize;
+// 	__u8  bInterval;
 
-	/* NOTE:  these two are _only_ in audio endpoints. */
-	/* use USB_DT_ENDPOINT*_SIZE in bLength, not sizeof. */
-	__u8  bRefresh;
-	__u8  bSynchAddress;
-} __attribute__ ((packed));
+// 	/* NOTE:  these two are _only_ in audio endpoints. */
+// 	/* use USB_DT_ENDPOINT*_SIZE in bLength, not sizeof. */
+// 	__u8  bRefresh;
+// 	__u8  bSynchAddress;
+// } __attribute__ ((packed));
 
-struct usb_ss_ep_comp_descriptor {
-	__u8  bLength;
-	__u8  bDescriptorType;
+// struct usb_ss_ep_comp_descriptor {
+// 	__u8  bLength;
+// 	__u8  bDescriptorType;
 
-	__u8  bMaxBurst;
-	__u8  bmAttributes;
-	__le16 wBytesPerInterval;
-} __attribute__ ((packed));
+// 	__u8  bMaxBurst;
+// 	__u8  bmAttributes;
+// 	__le16 wBytesPerInterval;
+// } __attribute__ ((packed));
 
-struct usb_config_descriptor {
-	__u8  bLength;
-	__u8  bDescriptorType;
+// struct usb_config_descriptor {
+// 	__u8  bLength;
+// 	__u8  bDescriptorType;
 
-	__le16 wTotalLength;
-	__u8  bNumInterfaces;
-	__u8  bConfigurationValue;
-	__u8  iConfiguration;
-	__u8  bmAttributes;
-	__u8  bMaxPower;
-} __attribute__ ((packed));
+// 	__le16 wTotalLength;
+// 	__u8  bNumInterfaces;
+// 	__u8  bConfigurationValue;
+// 	__u8  iConfiguration;
+// 	__u8  bmAttributes;
+// 	__u8  bMaxPower;
+// } __attribute__ ((packed));
 
-struct usb_device_descriptor {
-	__u8  bLength;
-	__u8  bDescriptorType;
+// struct usb_device_descriptor {
+// 	__u8  bLength;
+// 	__u8  bDescriptorType;
 
-	__le16 bcdUSB;
-	__u8  bDeviceClass;
-	__u8  bDeviceSubClass;
-	__u8  bDeviceProtocol;
-	__u8  bMaxPacketSize0;
-	__le16 idVendor;
-	__le16 idProduct;
-	__le16 bcdDevice;
-	__u8  iManufacturer;
-	__u8  iProduct;
-	__u8  iSerialNumber;
-	__u8  bNumConfigurations;
-} __attribute__ ((packed));
+// 	__le16 bcdUSB;
+// 	__u8  bDeviceClass;
+// 	__u8  bDeviceSubClass;
+// 	__u8  bDeviceProtocol;
+// 	__u8  bMaxPacketSize0;
+// 	__le16 idVendor;
+// 	__le16 idProduct;
+// 	__le16 bcdDevice;
+// 	__u8  iManufacturer;
+// 	__u8  iProduct;
+// 	__u8  iSerialNumber;
+// 	__u8  bNumConfigurations;
+// } __attribute__ ((packed));
 
 
 
@@ -1153,21 +1223,7 @@ struct xhci_event_cmd {
 #define writew(b, addr) (void)((*(volatile unsigned short *)(addr)) = (b))
 #define writel(b, addr) (void)((*(volatile unsigned int *)(addr)) = (b))
 
-#define __raw_readb readb
-#define __raw_readw readw
-#define __raw_readl readl
-#define __raw_writeb writeb
-#define __raw_writew writew
-#define __raw_writel writel
 
-#define upper_32_bits(n) ((u32)(((n) >> 16) >> 16))
-#define lower_32_bits(n) ((u32)(n))
-
-#define cpu_to_le16(x)  ((uint16_t) x)
-#define cpu_to_le32(x)  ((uint32_t) x)
-#define cpu_to_le64(x)  ((uint64_t) x)
-#define le32_to_cpu(x) 	((uint32_t) x)
-#define le16_to_cpu(x) 	((uint16_t) x)
 
 /* flags bitmasks */
 /* bits 16:23 are the virtual function ID */
@@ -1255,14 +1311,14 @@ union xhci_trb {
 #define TRB_TYPE(p)		((p) << 10)
 #define TRB_FIELD_TO_TYPE(p)	(((p) & TRB_TYPE_BITMASK) >> 10)
 
-enum usb_device_speed {
-	USB_SPEED_UNKNOWN = 0,			/* enumerating */
-	USB_SPEED_LOW, USB_SPEED_FULL,		/* usb 1.1 */
-	USB_SPEED_HIGH,				/* usb 2.0 */
-	USB_SPEED_WIRELESS,			/* wireless (usb 2.5) */
-	USB_SPEED_SUPER,			/* usb 3.0 */
-	USB_SPEED_SUPER_PLUS,			/* usb 3.1 */
-};
+// enum usb_device_speed {
+// 	USB_SPEED_UNKNOWN = 0,			/* enumerating */
+// 	USB_SPEED_LOW, USB_SPEED_FULL,		/* usb 1.1 */
+// 	USB_SPEED_HIGH,				/* usb 2.0 */
+// 	USB_SPEED_WIRELESS,			/* wireless (usb 2.5) */
+// 	USB_SPEED_SUPER,			/* usb 3.0 */
+// 	USB_SPEED_SUPER_PLUS,			/* usb 3.1 */
+// };
 
 
 
@@ -1779,10 +1835,8 @@ static void* xhci_malloc(struct xhci_ctrl* ctrl, size_t size)
 static inline void xhci_dma_unmap(struct xhci_ctrl *ctrl, dma_addr_t addr,
 				  size_t size)
 {
-	ZF_LOGF("Unimplemented for now...");
-#ifdef IOMMU
-	dev_iommu_dma_unmap(xhci_to_dev(ctrl), addr, size);
-#endif
+	ZF_LOGE("Free mem!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+	ps_dma_free(ctrl->dma_man, (void*)addr, size);
 }
 
 #endif /*_XHCI_XHCI_H_*/

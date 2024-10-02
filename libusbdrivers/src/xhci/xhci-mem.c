@@ -741,20 +741,20 @@ void xhci_endpoint_copy(struct xhci_ctrl *ctrl,
 //  * @param out_ctx contains the inpout context
 //  * Return: none
 //  */
-// void xhci_slot_copy(struct xhci_ctrl *ctrl, struct xhci_container_ctx *in_ctx,
-// 					struct xhci_container_ctx *out_ctx)
-// {
-// 	struct xhci_slot_ctx *in_slot_ctx;
-// 	struct xhci_slot_ctx *out_slot_ctx;
+void xhci_slot_copy(struct xhci_ctrl *ctrl, struct xhci_container_ctx *in_ctx,
+					struct xhci_container_ctx *out_ctx)
+{
+	struct xhci_slot_ctx *in_slot_ctx;
+	struct xhci_slot_ctx *out_slot_ctx;
 
-// 	in_slot_ctx = xhci_get_slot_ctx(ctrl, in_ctx);
-// 	out_slot_ctx = xhci_get_slot_ctx(ctrl, out_ctx);
+	in_slot_ctx = xhci_get_slot_ctx(ctrl, in_ctx);
+	out_slot_ctx = xhci_get_slot_ctx(ctrl, out_ctx);
 
-// 	in_slot_ctx->dev_info = out_slot_ctx->dev_info;
-// 	in_slot_ctx->dev_info2 = out_slot_ctx->dev_info2;
-// 	in_slot_ctx->tt_info = out_slot_ctx->tt_info;
-// 	in_slot_ctx->dev_state = out_slot_ctx->dev_state;
-// }
+	in_slot_ctx->dev_info = out_slot_ctx->dev_info;
+	in_slot_ctx->dev_info2 = out_slot_ctx->dev_info2;
+	in_slot_ctx->tt_info = out_slot_ctx->tt_info;
+	in_slot_ctx->dev_state = out_slot_ctx->dev_state;
+}
 
 
 
