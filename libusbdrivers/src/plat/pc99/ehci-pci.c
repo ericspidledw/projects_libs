@@ -67,7 +67,7 @@ static uintptr_t ehci_pci_init(uint16_t vid, uint16_t did,
 	libpci_scan(io_ops->io_port_ops);
 	/* dev = libpci_find_device(vid, did); */
 
-    dev = libpci_find_device_bdf(0, 0x1d, 0);
+    dev = libpci_find_device_bdf(0, 0x1a, 0);
 
 	if (dev) {
         ZF_LOGE("bdf: %x %x %x", dev->bus, dev->dev, dev->fun);
@@ -124,6 +124,7 @@ usb_host_init(enum usb_host_id id, ps_io_ops_t* io_ops, ps_mutex_ops_t *sync,
 		ZF_LOGF("Invalid arguments\n");
 	}
 
+	// id = USB_HOST2;
 	hdev->id = id;
 	hdev->dman = &io_ops->dma_manager;
 	hdev->sync = sync;
