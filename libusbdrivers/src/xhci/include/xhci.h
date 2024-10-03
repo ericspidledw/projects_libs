@@ -1812,6 +1812,7 @@ static inline dma_addr_t xhci_dma_map(struct xhci_ctrl *ctrl, void* addr,
 {
 
 
+	ZF_LOGE("Allocating using the dma at %p", ctrl->dma_man);
 	ZF_LOGE("Pinning address %p", addr);
 	dma_addr_t paddr = (dma_addr_t) ps_dma_pin(ctrl->dma_man, addr, size);
 	printf("Paddr is %p\n", paddr);
@@ -1838,5 +1839,157 @@ static inline void xhci_dma_unmap(struct xhci_ctrl *ctrl, dma_addr_t addr,
 	ZF_LOGE("Free mem!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 	ps_dma_free(ctrl->dma_man, (void*)addr, size);
 }
+
+static int xhci_parse_config(struct usb_device *dev,
+			unsigned char *buffer, int cfgno)
+{
+	struct usb_descriptor_header *head;
+	int index, ifno, epno, curr_if_num;
+	u16 ep_wMaxPacketSize;
+	struct usb_interface *if_desc = NULL;
+
+	ifno = -1;
+	epno = -1;
+	curr_if_num = -1;
+
+	dev->configno = cfgno;
+	head = (struct usb_descriptor_header *) &buffer[0];
+	if (head->bDescriptorType != USB_DT_CONFIG) {
+		printf(" ERROR: NOT USB_CONFIG_DESC %x\n",
+			head->bDescriptorType);
+		return -EINVAL;
+	}
+	if (head->bLength != USB_DT_CONFIG_SIZE) {
+		printf("ERROR: Invalid USB CFG length (%d)\n", head->bLength);
+		return -EINVAL;
+	}
+	memcpy(&dev->config, head, USB_DT_CONFIG_SIZE);
+	dev->config.no_of_if = 0;
+
+	index = dev->config.desc.bLength;
+	/* Ok the first entry must be a configuration entry,
+	 * now process the others */
+	head = (struct usb_descriptor_header *) &buffer[index];
+	while (index + 1 < dev->config.desc.wTotalLength && head->bLength) {
+		switch (head->bDescriptorType) {
+		case USB_DT_INTERFACE:
+			if (head->bLength != USB_DT_INTERFACE_SIZE) {
+				printf("ERROR: Invalid USB IF length (%d)\n",
+					head->bLength);
+				break;
+			}
+			if (index + USB_DT_INTERFACE_SIZE >
+			    dev->config.desc.wTotalLength) {
+				puts("USB IF descriptor overflowed buffer!\n");
+				break;
+			}
+			if (((struct usb_interface_descriptor *) \
+			     head)->bInterfaceNumber != curr_if_num) {
+				/* this is a new interface, copy new desc */
+				ifno = dev->config.no_of_if;
+				if (ifno >= USB_MAXINTERFACES) {
+					puts("Too many USB interfaces!\n");
+					/* try to go on with what we have */
+					return -EINVAL;
+				}
+				if_desc = &dev->config.if_desc[ifno];
+				dev->config.no_of_if++;
+				memcpy(if_desc, head,
+					USB_DT_INTERFACE_SIZE);
+				if_desc->no_of_ep = 0;
+				if_desc->num_altsetting = 1;
+				curr_if_num =
+				     if_desc->desc.bInterfaceNumber;
+			} else {
+				/* found alternate setting for the interface */
+				if (ifno >= 0) {
+					if_desc = &dev->config.if_desc[ifno];
+					if_desc->num_altsetting++;
+				}
+			}
+			break;
+		case USB_DT_ENDPOINT:
+			if (head->bLength != USB_DT_ENDPOINT_SIZE &&
+			    head->bLength != USB_DT_ENDPOINT_AUDIO_SIZE) {
+				printf("ERROR: Invalid USB EP length (%d)\n",
+					head->bLength);
+				break;
+			}
+			if (index + head->bLength >
+			    dev->config.desc.wTotalLength) {
+				puts("USB EP descriptor overflowed buffer!\n");
+				break;
+			}
+			if (ifno < 0) {
+				puts("Endpoint descriptor out of order!\n");
+				break;
+			}
+			epno = dev->config.if_desc[ifno].no_of_ep;
+			if_desc = &dev->config.if_desc[ifno];
+			if (epno >= USB_MAXENDPOINTS) {
+				printf("Interface %d has too many endpoints!\n",
+					if_desc->desc.bInterfaceNumber);
+				return -EINVAL;
+			}
+			/* found an endpoint */
+			if_desc->no_of_ep++;
+			memcpy(&if_desc->ep_desc[epno], head,
+				USB_DT_ENDPOINT_SIZE);
+			ep_wMaxPacketSize = get_unaligned(&dev->config.\
+							if_desc[ifno].\
+							ep_desc[epno].\
+							wMaxPacketSize);
+			put_unaligned(le16_to_cpu(ep_wMaxPacketSize),
+					&dev->config.\
+					if_desc[ifno].\
+					ep_desc[epno].\
+					wMaxPacketSize);
+			ZF_LOGE("if %d, ep %d\n", ifno, epno);
+			break;
+		case USB_DT_SS_ENDPOINT_COMP:
+			if (head->bLength != USB_DT_SS_EP_COMP_SIZE) {
+				printf("ERROR: Invalid USB EPC length (%d)\n",
+					head->bLength);
+				break;
+			}
+			if (index + USB_DT_SS_EP_COMP_SIZE >
+			    dev->config.desc.wTotalLength) {
+				puts("USB EPC descriptor overflowed buffer!\n");
+				break;
+			}
+			if (ifno < 0 || epno < 0) {
+				puts("EPC descriptor out of order!\n");
+				break;
+			}
+			if_desc = &dev->config.if_desc[ifno];
+			memcpy(&if_desc->ss_ep_comp_desc[epno], head,
+				USB_DT_SS_EP_COMP_SIZE);
+			break;
+		default:
+			if (head->bLength == 0)
+				return -EINVAL;
+
+			ZF_LOGE("unknown Description Type : %x\n",
+			      head->bDescriptorType);
+
+// #ifdef DEBUG
+// 			{
+// 				unsigned char *ch = (unsigned char *)head;
+// 				int i;
+
+// 				for (i = 0; i < head->bLength; i++)
+// 					debug("%02X ", *ch++);
+// 				debug("\n\n\n");
+// 			}
+// #endif
+			break;
+		}
+		index += head->bLength;
+		head = (struct usb_descriptor_header *)&buffer[index];
+	}
+	return 0;
+}
+
+
 
 #endif /*_XHCI_XHCI_H_*/

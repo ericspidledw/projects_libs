@@ -598,7 +598,8 @@ parse_config(struct usb_dev *udev, struct anon_desc *d, int tot_len,
 		/* Update our config/iface */
 		switch (d->bDescriptorType) {
 		case CONFIGURATION:
-			cfg = ((struct config_desc *)usrd)->bConfigurationValue;
+			cfg = ((struct config_desc*)usrd)->bConfigurationValue;
+			// memcpy(udev->drv_dev->config.desc, usrd, sizeof(struct config_desc)); //copy each config over to config
 			print_config_desc((struct config_desc *)usrd);
 			iface = -1;
 			break;
@@ -1175,7 +1176,8 @@ int usbdev_parse_config(usb_dev_t *udev, usb_config_cb cb, void *t)
 	}
 	/* Now loop through descriptors */
 	print_anon_desc(d);
-	err = parse_config(udev, d, tot_len, cb, t);
+	err = parse_config(udev, d, tot_len, cb, t);// this parses for seL4's struct
+	xhci_parse_config(udev->drv_dev, (char*)d, 0); // for now this is a 1 we need a better way to determine this...
 	usb_destroy_xact(udev->dman, xact, sizeof(xact) / sizeof(*xact));
 	return err;
 }

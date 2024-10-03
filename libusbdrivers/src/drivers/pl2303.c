@@ -56,6 +56,7 @@ pl2303_config_cb(void *token, int cfg, int iface, struct anon_desc *desc)
 		dev->config = cdesc->bConfigurationValue; // this sets the config to 1
 		break;
 	default:
+		ZF_LOGE("Desc type was %d", desc->bDescriptorType);
 		break;
 	}
 
@@ -135,6 +136,16 @@ pl2303_startup_magic(struct usb_dev *udev)
 	usb_destroy_xact(udev->dman, xact, 2);
 }
 
+static void print_transactions(struct xact* xacts, int nxact){
+	for(int i = 0; i < nxact; i++)
+	{
+		struct xact curr = xacts[i];
+		printf("XACT %04d:  type: %08s  vaddr: %08p  paddr: %08p   len %zu\n",
+		i, curr.type, curr.vaddr, curr.paddr, curr.len);
+	}
+}
+
+
 int usb_pl2303_bind(usb_dev_t *udev)
 {
 
@@ -159,20 +170,24 @@ int usb_pl2303_bind(usb_dev_t *udev)
 	udev->dev_data = (struct udev_priv*)dev; // right now our dev is the root device????
 
 	/* Parse the descriptors */
-	err = usbdev_parse_config(udev, pl2303_config_cb, dev); // parse descriptors?
+	err = usbdev_parse_config(udev, pl2303_config_cb, dev);
 	if (err) {
 		ZF_LOGF("Invalid descriptors\n");
 	}
 
-	/* Find endpoints */
+	/* Find endpoints need to analyze this still */
 	for (int i = 0; udev->ep[i] != NULL; i++) {
+		ZF_LOGE("ep %d", i);
 		if (udev->ep[i]->type == EP_BULK) {
 			if (udev->ep[i]->dir == EP_DIR_OUT) {
+				ZF_LOGE("BULK OUT EP");
 				dev->ep_out = udev->ep[i];
 			} else {
+				ZF_LOGE("BULK IN EP");
 				dev->ep_in = udev->ep[i];
 			}
 		} else if (udev->ep[i]->type == EP_INTERRUPT) {
+			ZF_LOGE("Interrupt EP");
 			dev->ep_int = udev->ep[i];
 		} else {
 			continue;
@@ -197,9 +212,10 @@ int usb_pl2303_bind(usb_dev_t *udev)
 	/* Fill in the request */
 	xact.type = PID_SETUP;
 	req = xact_get_vaddr(&xact);
-	ZF_LOGE("dev config is %d", dev->config);
+	ZF_LOGE("dev config index is %d", dev->config);
 	*req = __set_configuration_req(dev->config); /// dev->config??
 
+//num_of_ep = udev->config.if_desc[0].no_of_ep;
 	/* Send the request to the host */
 	ZF_LOGE("Right before the magic????????");
 	err = usbdev_schedule_xact(udev, udev->ep_ctrl, &xact, 1, NULL, NULL);
@@ -215,6 +231,9 @@ int usb_pl2303_bind(usb_dev_t *udev)
 	/* Allocate interrupt xact */
 	dev->int_xact.type = PID_IN;
 	dev->int_xact.len = dev->ep_int->max_pkt;
+	ZF_LOGE("maxpacket is %d", dev->ep_int->max_pkt);
+	print_transactions(&dev->int_xact, 1);
+
 	err = usb_alloc_xact(udev->dman, &dev->int_xact, 1);
 	if (err) {
 		ZF_LOGF("Out of DMA memory\n");
@@ -320,6 +339,7 @@ int usb_pl2303_write(usb_dev_t *udev, void *buf, int len)
 	dev = (struct pl2303_device*)udev->dev_data;
 
 	xact.type = PID_OUT;
+	ZF_LOGE("len is %d", len);
 	xact.len = len;
 	err = usb_alloc_xact(udev->dman, &xact, 1);
 	if (err) {

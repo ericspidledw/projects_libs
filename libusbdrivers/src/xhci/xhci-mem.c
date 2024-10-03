@@ -302,6 +302,7 @@ static struct xhci_segment* xhci_segment_alloc(struct xhci_ctrl *ctrl)
 	printf("seg is %p\n", seg);
 	assert(seg);
 	seg->trbs = xhci_malloc(ctrl, SEGMENT_SIZE);
+	ZF_LOGE("XHCI dma map before segment");
 	seg->dma = (dma_addr_t) xhci_dma_map(ctrl,  seg->trbs, SEGMENT_SIZE);
 	ZF_LOGE("Segment dma has %p and trb has %p", seg->dma, seg->trbs);
 	// seg->trbs = xhci_dma_map(ctrl, &seg->dma, SEGMENT_SIZE);
@@ -397,6 +398,7 @@ static int xhci_scratchpad_alloc(struct xhci_ctrl *ctrl)
 
 //  scratchpad->sp_array = (struct xhci_scratchpad *)xhci_dma_map(ctrl, &val_64,
 // 			      num_sp * sizeof(u64));
+ZF_LOGE("DMA MAP for scratchpad");
 	val_64 = xhci_dma_map(ctrl,  scratchpad->sp_array,
 			      num_sp * sizeof(u64));
 	ctrl->dcbaa->dev_context_ptrs[0] = cpu_to_le64(val_64);
@@ -420,6 +422,7 @@ static int xhci_scratchpad_alloc(struct xhci_ctrl *ctrl)
 	// xhci_flush_cache((uintptr_t)buf, num_sp * ctrl->page_size);
 
 	scratchpad->scratchpad = buf;
+ZF_LOGE("DMA MAP for scratchpad2");
 	val_64 = xhci_dma_map(ctrl, buf, num_sp * ctrl->page_size);
 	// buf = xhci_dma_map(ctrl, &val_64 , num_sp * ctrl->page_size);
 	for (i = 0; i < num_sp; i++) {

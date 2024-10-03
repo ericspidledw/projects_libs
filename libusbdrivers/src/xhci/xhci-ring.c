@@ -247,14 +247,10 @@ static int prepare_ring(struct xhci_ctrl *ctrl, struct xhci_ring *ep_ring,
 							u32 ep_state)
 {
 	ZF_LOGE("Inside of prepare ring");
-	ZF_LOGE("1");
 	ZF_LOGE("ep ring is %p", ep_ring);
 	union xhci_trb *next = ep_ring->enqueue; // ep_ring --> enqueue is
-	ZF_LOGE("2");
 	assert(ctrl);
-	ZF_LOGE("3");
 	assert(ep_ring);
-	ZF_LOGE("4");
 	printf("Going into the switch\n");
 	/* Make sure the endpoint has been added to xHC schedule */
 	switch (ep_state) {
@@ -663,198 +659,203 @@ static void record_transfer_result(struct usb_device *udev,
 //  * @param buffer	buffer to be read/written based on the request
 //  * Return: returns 0 if successful else -1 on failure
 //  */
-// int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
-// 			int length, void *buffer)
-// {
-// 	int num_trbs = 0;
-// 	struct xhci_generic_trb *start_trb;
-// 	bool first_trb = false;
-// 	int start_cycle;
-// 	u32 field = 0;
-// 	u32 length_field = 0;
-// 	struct xhci_ctrl *ctrl = xhci_get_ctrl(udev);
-// 	int slot_id = udev->slot_id;
-// 	int ep_index;
-// 	struct xhci_virt_device *virt_dev;
-// 	struct xhci_ep_ctx *ep_ctx;
-// 	struct xhci_ring *ring;		/* EP transfer ring */
-// 	union xhci_trb *event;
+int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
+			int length, void *buffer)
+{
+	int num_trbs = 0;
+	struct xhci_generic_trb *start_trb;
+	bool first_trb = false;
+	int start_cycle;
+	u32 field = 0;
+	u32 length_field = 0;
+	struct xhci_ctrl *ctrl = xhci_get_ctrl(udev);
+	int slot_id = udev->slot_id;
+	ZF_LOGE("slot id is %d", slot_id);
+	int ep_index;
+	struct xhci_virt_device *virt_dev;
+	struct xhci_ep_ctx *ep_ctx;
+	struct xhci_ring *ring;		/* EP transfer ring */
+	union xhci_trb *event;
 
-// 	int running_total, trb_buff_len;
-// 	bool more_trbs_coming = true;
-// 	int maxpacketsize;
-// 	u64 addr;
-// 	int ret;
-// 	u32 trb_fields[4];
-// 	u64 buf_64 = xhci_dma_map(ctrl, buffer, length);
-// 	dma_addr_t last_transfer_trb_addr;
-// 	int available_length;
+	int running_total, trb_buff_len;
+	bool more_trbs_coming = true;
+	int maxpacketsize;
+	u64 addr;
+	int ret;
+	u32 trb_fields[4];
+	u64 buf_64 = xhci_dma_map(ctrl, buffer, length);
+	dma_addr_t last_transfer_trb_addr;
+	int available_length;
 
-// 	ZF_LOGE("dev=%p, pipe=%lx, buffer=%p, length=%d\n",
-// 		udev, pipe, buffer, length);
+	ZF_LOGE("dev=%p, pipe=%lx, buffer=%p, length=%d\n",
+		udev, pipe, buffer, length);
 
-// 	available_length = length;
-// 	ep_index = usb_pipe_ep_index(pipe);
-// 	virt_dev = ctrl->devs[slot_id];
+	available_length = length;
+	ep_index = usb_pipe_ep_index(pipe);
+	ZF_LOGE("ep_index is %d", ep_index);
+	virt_dev = ctrl->devs[slot_id];
 
-// 	xhci_inval_cache((uintptr_t)virt_dev->out_ctx->bytes,
-// 			 virt_dev->out_ctx->size);
+	// xhci_inval_cache((uintptr_t)virt_dev->out_ctx->bytes,
+	// 		 virt_dev->out_ctx->size);
 
-// 	ep_ctx = xhci_get_ep_ctx(ctrl, virt_dev->out_ctx, ep_index);
+	ep_ctx = xhci_get_ep_ctx(ctrl, virt_dev->out_ctx, ep_index);
 
-// 	/*
-// 	 * If the endpoint was halted due to a prior error, resume it before
-// 	 * the next transfer. It is the responsibility of the upper layer to
-// 	 * have dealt with whatever caused the error.
-// 	 */
-// 	if ((le32_to_cpu(ep_ctx->ep_info) & EP_STATE_MASK) == EP_STATE_HALTED)
-// 		reset_ep(udev, ep_index);
+	/*
+	 * If the endpoint was halted due to a prior error, resume it before
+	 * the next transfer. It is the responsibility of the upper layer to
+	 * have dealt with whatever caused the error.
+	 */
+	if ((le32_to_cpu(ep_ctx->ep_info) & EP_STATE_MASK) == EP_STATE_HALTED)
+		reset_ep(udev, ep_index);
 
-// 	ring = virt_dev->eps[ep_index].ring;
-// 	/*
-// 	 * How much data is (potentially) left before the 64KB boundary?
-// 	 * XHCI Spec puts restriction( TABLE 49 and 6.4.1 section of XHCI Spec)
-// 	 * that the buffer should not span 64KB boundary. if so
-// 	 * we send request in more than 1 TRB by chaining them.
-// 	 */
-// 	running_total = TRB_MAX_BUFF_SIZE -
-// 			(lower_32_bits(buf_64) & (TRB_MAX_BUFF_SIZE - 1));
-// 	trb_buff_len = running_total;
-// 	running_total &= TRB_MAX_BUFF_SIZE - 1;
+	ring = virt_dev->eps[ep_index].ring;
+	/*
+	 * How much data is (potentially) left before the 64KB boundary?
+	 * XHCI Spec puts restriction( TABLE 49 and 6.4.1 section of XHCI Spec)
+	 * that the buffer should not span 64KB boundary. if so
+	 * we send request in more than 1 TRB by chaining them.
+	 */
+	running_total = TRB_MAX_BUFF_SIZE -
+			(lower_32_bits(buf_64) & (TRB_MAX_BUFF_SIZE - 1));
+	trb_buff_len = running_total;
+	running_total &= TRB_MAX_BUFF_SIZE - 1;
 
-// 	/*
-// 	 * If there's some data on this 64KB chunk, or we have to send a
-// 	 * zero-length transfer, we need at least one TRB
-// 	 */
-// 	if (running_total != 0 || length == 0)
-// 		num_trbs++;
+	/*
+	 * If there's some data on this 64KB chunk, or we have to send a
+	 * zero-length transfer, we need at least one TRB
+	 */
+	if (running_total != 0 || length == 0)
+		num_trbs++;
 
-// 	/* How many more 64KB chunks to transfer, how many more TRBs? */
-// 	while (running_total < length) {
-// 		num_trbs++;
-// 		running_total += TRB_MAX_BUFF_SIZE;
-// 	}
+	/* How many more 64KB chunks to transfer, how many more TRBs? */
+	while (running_total < length) {
+		num_trbs++;
+		running_total += TRB_MAX_BUFF_SIZE;
+	}
 
-// 	/*
-// 	 * XXX: Calling routine prepare_ring() called in place of
-// 	 * prepare_trasfer() as there in 'Linux' since we are not
-// 	 * maintaining multiple TDs/transfer at the same time.
-// 	 */
-// 	ret = prepare_ring(ctrl, ring,
-// 			   le32_to_cpu(ep_ctx->ep_info) & EP_STATE_MASK);
-// 	if (ret < 0)
-// 		return ret;
+	/*
+	 * XXX: Calling routine prepare_ring() called in place of
+	 * prepare_trasfer() as there in 'Linux' since we are not
+	 * maintaining multiple TDs/transfer at the same time.
+	 */
+	ret = prepare_ring(ctrl, ring,
+			   le32_to_cpu(ep_ctx->ep_info) & EP_STATE_MASK);
+	if (ret < 0) {
+		ZF_LOGE("prepare ring failed in bulk tx");
+		ZF_LOGE("ep_index is %d", ep_index);
+		return ret;
+	}
 
-// 	/*
-// 	 * Don't give the first TRB to the hardware (by toggling the cycle bit)
-// 	 * until we've finished creating all the other TRBs.  The ring's cycle
-// 	 * state may change as we enqueue the other TRBs, so save it too.
-// 	 */
-// 	start_trb = &ring->enqueue->generic;
-// 	start_cycle = ring->cycle_state;
+	/*
+	 * Don't give the first TRB to the hardware (by toggling the cycle bit)
+	 * until we've finished creating all the other TRBs.  The ring's cycle
+	 * state may change as we enqueue the other TRBs, so save it too.
+	 */
+	start_trb = &ring->enqueue->generic;
+	start_cycle = ring->cycle_state;
 
-// 	running_total = 0;
-// 	maxpacketsize = usb_maxpacket(udev, pipe);
+	running_total = 0;
+	maxpacketsize = usb_maxpacket(udev, pipe);
 
-// 	/* How much data is in the first TRB? */
-// 	/*
-// 	 * How much data is (potentially) left before the 64KB boundary?
-// 	 * XHCI Spec puts restriction( TABLE 49 and 6.4.1 section of XHCI Spec)
-// 	 * that the buffer should not span 64KB boundary. if so
-// 	 * we send request in more than 1 TRB by chaining them.
-// 	 */
-// 	addr = buf_64;
+	/* How much data is in the first TRB? */
+	/*
+	 * How much data is (potentially) left before the 64KB boundary?
+	 * XHCI Spec puts restriction( TABLE 49 and 6.4.1 section of XHCI Spec)
+	 * that the buffer should not span 64KB boundary. if so
+	 * we send request in more than 1 TRB by chaining them.
+	 */
+	addr = buf_64;
 
-// 	if (trb_buff_len > length)
-// 		trb_buff_len = length;
+	if (trb_buff_len > length)
+		trb_buff_len = length;
 
-// 	first_trb = true;
+	first_trb = true;
 
-// 	/* flush the buffer before use */
-// 	xhci_flush_cache((uintptr_t)buffer, length);
+	/* flush the buffer before use */
+	// xhci_flush_cache((uintptr_t)buffer, length);
 
-// 	/* Queue the first TRB, even if it's zero-length */
-// 	do {
-// 		u32 remainder = 0;
-// 		field = 0;
-// 		/* Don't change the cycle bit of the first TRB until later */
-// 		if (first_trb) {
-// 			first_trb = false;
-// 			if (start_cycle == 0)
-// 				field |= TRB_CYCLE;
-// 		} else {
-// 			field |= ring->cycle_state;
-// 		}
+	/* Queue the first TRB, even if it's zero-length */
+	do {
+		u32 remainder = 0;
+		field = 0;
+		/* Don't change the cycle bit of the first TRB until later */
+		if (first_trb) {
+			first_trb = false;
+			if (start_cycle == 0)
+				field |= TRB_CYCLE;
+		} else {
+			field |= ring->cycle_state;
+		}
 
-// 		/*
-// 		 * Chain all the TRBs together; clear the chain bit in the last
-// 		 * TRB to indicate it's the last TRB in the chain.
-// 		 */
-// 		if (num_trbs > 1) {
-// 			field |= TRB_CHAIN;
-// 		} else {
-// 			field |= TRB_IOC;
-// 			more_trbs_coming = false;
-// 		}
+		/*
+		 * Chain all the TRBs together; clear the chain bit in the last
+		 * TRB to indicate it's the last TRB in the chain.
+		 */
+		if (num_trbs > 1) {
+			field |= TRB_CHAIN;
+		} else {
+			field |= TRB_IOC;
+			more_trbs_coming = false;
+		}
 
-// 		/* Only set interrupt on short packet for IN endpoints */
-// 		if (usb_pipein(pipe))
-// 			field |= TRB_ISP;
+		/* Only set interrupt on short packet for IN endpoints */
+		if (usb_pipein(pipe))
+			field |= TRB_ISP;
 
-// 		/* Set the TRB length, TD size, and interrupter fields. */
-// 		remainder = xhci_td_remainder(ctrl, running_total, trb_buff_len,
-// 					      length, maxpacketsize,
-// 					      more_trbs_coming);
+		/* Set the TRB length, TD size, and interrupter fields. */
+		remainder = xhci_td_remainder(ctrl, running_total, trb_buff_len,
+					      length, maxpacketsize,
+					      more_trbs_coming);
 
-// 		length_field = (TRB_LEN(trb_buff_len) |
-// 				TRB_TD_SIZE(remainder) |
-// 				TRB_INTR_TARGET(0));
+		length_field = (TRB_LEN(trb_buff_len) |
+				TRB_TD_SIZE(remainder) |
+				TRB_INTR_TARGET(0));
 
-// 		trb_fields[0] = lower_32_bits(addr);
-// 		trb_fields[1] = upper_32_bits(addr);
-// 		trb_fields[2] = length_field;
-// 		trb_fields[3] = field | TRB_TYPE(TRB_NORMAL);
+		trb_fields[0] = lower_32_bits(addr);
+		trb_fields[1] = upper_32_bits(addr);
+		trb_fields[2] = length_field;
+		trb_fields[3] = field | TRB_TYPE(TRB_NORMAL);
 
-// 		last_transfer_trb_addr = queue_trb(ctrl, ring, (num_trbs > 1), trb_fields);
+		last_transfer_trb_addr = queue_trb(ctrl, ring, (num_trbs > 1), trb_fields);
 
-// 		--num_trbs;
+		--num_trbs;
 
-// 		running_total += trb_buff_len;
+		running_total += trb_buff_len;
 
-// 		/* Calculate length for next transfer */
-// 		addr += trb_buff_len;
-// 		trb_buff_len = min((length - running_total), TRB_MAX_BUFF_SIZE);
-// 	} while (running_total < length);
+		/* Calculate length for next transfer */
+		addr += trb_buff_len;
+		trb_buff_len = min((length - running_total), TRB_MAX_BUFF_SIZE);
+	} while (running_total < length);
 
-// 	giveback_first_trb(udev, ep_index, start_cycle, start_trb);
+	giveback_first_trb(udev, ep_index, start_cycle, start_trb);
 
-// again:
-// 	event = xhci_wait_for_event(ctrl, TRB_TRANSFER);
-// 	if (!event) {
-// 		ZF_LOGE("XHCI bulk transfer timed out, aborting...\n");
-// 		abort_td(udev, ep_index);
-// 		udev->status = USB_ST_NAK_REC;  /* closest thing to a timeout */
-// 		udev->act_len = 0;
-// 		return -ETIMEDOUT;
-// 	}
+again:
+	event = xhci_wait_for_event(ctrl, TRB_TRANSFER);
+	if (!event) {
+		ZF_LOGE("XHCI bulk transfer timed out, aborting...\n");
+		abort_td(udev, ep_index);
+		udev->status = USB_ST_NAK_REC;  /* closest thing to a timeout */
+		udev->act_len = 0;
+		return -ETIMEDOUT;
+	}
 
-// 	if ((uintptr_t)(le64_to_cpu(event->trans_event.buffer)) !=
-// 	    (uintptr_t)last_transfer_trb_addr) {
-// 		available_length -=
-// 			(int)EVENT_TRB_LEN(le32_to_cpu(event->trans_event.transfer_len));
-// 		xhci_acknowledge_event(ctrl);
-// 		goto again;
-// 	}
+	if ((uintptr_t)(le64_to_cpu(event->trans_event.buffer)) !=
+	    (uintptr_t)last_transfer_trb_addr) {
+		available_length -=
+			(int)EVENT_TRB_LEN(le32_to_cpu(event->trans_event.transfer_len));
+		xhci_acknowledge_event(ctrl);
+		goto again;
+	}
 
-// 	field = le32_to_cpu(event->trans_event.flags);
+	field = le32_to_cpu(event->trans_event.flags);
 
-// 	record_transfer_result(udev, event, available_length);
-// 	xhci_acknowledge_event(ctrl);
-// 	xhci_inval_cache((uintptr_t)buffer, length);
-// 	xhci_dma_unmap(ctrl, buf_64, length);
+	record_transfer_result(udev, event, available_length);
+	xhci_acknowledge_event(ctrl);
+	// xhci_inval_cache((uintptr_t)buffer, length);
+	xhci_dma_unmap(ctrl, buf_64, length);
 
-// 	return (udev->status != USB_ST_NOT_PROC) ? 0 : -1;
-// }
+	return (udev->status != USB_ST_NOT_PROC) ? 0 : -1;
+}
 
 // /**
 //  * Queues up the Control Transfer Request
@@ -904,6 +905,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 	 */
 	if (udev->speed == USB_SPEED_FULL) { // use udev to get speed
 		ret = xhci_check_maxpacket(udev); // also to check maxpacket size
+		ZF_LOGE("ret after maxpacket is %d", ret);
 		if (ret < 0)
 			return ret;
 	}
@@ -932,6 +934,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 	ret = prepare_ring(ctrl, ep_ring,
 				le32_to_cpu(ep_ctx->ep_info) & EP_STATE_MASK); // we want 1
 
+	ZF_LOGE("Ret is %d", ret);
 	if (ret < 0)
 		return ret;
 
@@ -997,6 +1000,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 	if (length > 0) {
 		if (req->requesttype & USB_DIR_IN)
 			field |= TRB_DIR_IN;
+	ZF_LOGE("DMA MAP for ctrl buffer ctrl is at %p buffer at %p and length is 0x%d", ctrl, buffer, length);
 		buf_64 = xhci_dma_map(ctrl, buffer, length);
 
 		trb_fields[0] = lower_32_bits(buf_64);
@@ -1038,6 +1042,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 
 	record_transfer_result(udev, event, length); // use it to record a transfer result
 	xhci_acknowledge_event(ctrl);
+	ZF_LOGE("udev->status post event is %d", udev->status);
 	if (udev->status == USB_ST_STALLED) { // check udev status here
 		reset_ep(udev, ep_index); // use it to reset the endpoint
 		return -EPIPE;
@@ -1058,6 +1063,8 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 			goto abort;
 		xhci_acknowledge_event(ctrl);
 	}
+
+	ZF_LOGE("udev->status is %d", udev->status);
 
 	return (udev->status != USB_ST_NOT_PROC) ? 0 : -1; // returns status here
 

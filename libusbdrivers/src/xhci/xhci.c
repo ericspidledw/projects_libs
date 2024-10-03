@@ -537,14 +537,20 @@ static int xhci_set_configuration(struct usb_device *udev)
 	num_of_ep = udev->config.if_desc[0].no_of_ep;
 	ifdesc = &udev->config.if_desc[0];
 
+	ZF_LOGE("SET CONFIG: get input control ctx");
 	ctrl_ctx = xhci_get_input_control_ctx(in_ctx);
 	/* Initialize the input context control */
 	ctrl_ctx->add_flags = cpu_to_le32(SLOT_FLAG);
 	ctrl_ctx->drop_flags = 0;
 
+	ZF_LOGE("SET CONFIG: iterate through eps");
+
+	ZF_LOGE("num of ep is %d", num_of_ep);
+
 	/* EP_FLAG gives values 1 & 4 for EP1OUT and EP2IN */
 	for (cur_ep = 0; cur_ep < num_of_ep; cur_ep++) {
 		ep_flag = xhci_get_ep_index(&ifdesc->ep_desc[cur_ep]);
+		ZF_LOGE("ep index is %d", ep_flag);
 		ctrl_ctx->add_flags |= cpu_to_le32(1 << (ep_flag + 1));
 		if (max_ep_flag < ep_flag)
 			max_ep_flag = ep_flag;
@@ -552,6 +558,7 @@ static int xhci_set_configuration(struct usb_device *udev)
 
 	// xhci_inval_cache((uintptr_t)out_ctx->bytes, out_ctx->size);
 
+	ZF_LOGE("SET CONFIG: slot context");
 	/* slot context */
 	xhci_slot_copy(ctrl, in_ctx, out_ctx);
 	slot_ctx = xhci_get_slot_ctx(ctrl, in_ctx);
@@ -560,8 +567,10 @@ static int xhci_set_configuration(struct usb_device *udev)
 
 	xhci_endpoint_copy(ctrl, in_ctx, out_ctx, 0);
 
+	ZF_LOGE("SET CONFIG: fill up ep contexts");
 	/* filling up ep contexts */
 	for (cur_ep = 0; cur_ep < num_of_ep; cur_ep++) {
+		ZF_LOGE("SET CONFIG: ep context is %d", cur_ep);
 		struct usb_endpoint_descriptor *endpt_desc = NULL;
 		struct usb_ss_ep_comp_descriptor *ss_ep_comp_desc = NULL;
 
@@ -586,6 +595,7 @@ static int xhci_set_configuration(struct usb_device *udev)
 		avg_trb_len = max_esit_payload;
 
 		ep_index = xhci_get_ep_index(endpt_desc);
+		ZF_LOGE("ep index is %d", ep_index);
 		ep_ctx[ep_index] = xhci_get_ep_ctx(ctrl, in_ctx, ep_index);
 
 		/* Allocate the ep rings */
@@ -595,7 +605,9 @@ static int xhci_set_configuration(struct usb_device *udev)
 
 		/*NOTE: ep_desc[0] actually represents EP1 and so on */
 		dir = (((endpt_desc->bEndpointAddress) & (0x80)) >> 7);
+		ZF_LOGE("dir is 0x%lx and addrs is 0x%lx", dir, endpt_desc->bEndpointAddress);
 		ep_type = (((endpt_desc->bmAttributes) & (0x3)) | (dir << 2));
+		ZF_LOGE("Ep type is 0x%lx and attrs is 0x%lx", ep_type, endpt_desc->bmAttributes);
 
 		ep_ctx[ep_index]->ep_info =
 			cpu_to_le32(EP_MAX_ESIT_PAYLOAD_HI(max_esit_payload) |
@@ -639,6 +651,7 @@ static int xhci_set_configuration(struct usb_device *udev)
 		}
 	}
 
+	ZF_LOGE("SET CONFIG: return the configure endpoints");
 	return xhci_configure_endpoints(udev, false);
 }
 
@@ -1154,23 +1167,23 @@ unknown:
 //  * @param interval	interval of the interrupt
 //  * Return: 0
 //  */
-// static int _xhci_submit_int_msg(struct usb_device *udev, unsigned long pipe,
-// 				void *buffer, int length, int interval,
-// 				bool nonblock)
-// {
-// 	if (usb_pipetype(pipe) != PIPE_INTERRUPT) {
-// 		printf("non-interrupt pipe (type=%lu)", usb_pipetype(pipe));
-// 		return -EINVAL;
-// 	}
+static int _xhci_submit_int_msg(struct usb_device *udev, unsigned long pipe,
+				void *buffer, int length, int interval,
+				bool nonblock)
+{
+	if (usb_pipetype(pipe) != PIPE_INTERRUPT) {
+		printf("non-interrupt pipe (type=%lu)", usb_pipetype(pipe));
+		return -EINVAL;
+	}
 
-// 	/*
-// 	 * xHCI uses normal TRBs for both bulk and interrupt. When the
-// 	 * interrupt endpoint is to be serviced, the xHC will consume
-// 	 * (at most) one TD. A TD (comprised of sg list entries) can
-// 	 * take several service intervals to transmit.
-// 	 */
-// 	return xhci_bulk_tx(udev, pipe, length, buffer);
-// }
+	/*
+	 * xHCI uses normal TRBs for both bulk and interrupt. When the
+	 * interrupt endpoint is to be serviced, the xHC will consume
+	 * (at most) one TD. A TD (comprised of sg list entries) can
+	 * take several service intervals to transmit.
+	 */
+	return xhci_bulk_tx(udev, pipe, length, buffer);
+}
 
 // /**
 //  * submit the BULK type of request to the USB Device
@@ -1181,16 +1194,16 @@ unknown:
 //  * @param length	length of the buffer
 //  * Return: returns 0 if successful else -1 on failure
 //  */
-// static int _xhci_submit_bulk_msg(struct usb_device *udev, unsigned long pipe,
-// 				 void *buffer, int length)
-// {
-// 	if (usb_pipetype(pipe) != PIPE_BULK) {
-// 		printf("non-bulk pipe (type=%lu)", usb_pipetype(pipe));
-// 		return -EINVAL;
-// 	}
+static int _xhci_submit_bulk_msg(struct usb_device *udev, unsigned long pipe,
+				 void *buffer, int length)
+{
+	if (usb_pipetype(pipe) != PIPE_BULK) {
+		printf("non-bulk pipe (type=%lu)", usb_pipetype(pipe));
+		return -EINVAL;
+	}
 
-// 	return xhci_bulk_tx(udev, pipe, length, buffer);
-// }
+	return xhci_bulk_tx(udev, pipe, length, buffer);
+}
 
 // /**
 //  * submit the control type of request to the Root hub/Device based on the devnum
@@ -1356,21 +1369,21 @@ static int xhci_submit_control_msg(struct usb_device *udev,
 					root_portnr);
 }
 
-// static int xhci_submit_bulk_msg(struct udevice *dev, struct usb_device *udev,
-// 				unsigned long pipe, void *buffer, int length)
-// {
-// 	ZF_LOGE("%s: dev='%s', udev=%p\n", __func__, dev->name, udev);
-// 	return _xhci_submit_bulk_msg(udev, pipe, buffer, length);
-// }
+static int xhci_submit_bulk_msg(struct usb_device *udev,
+				unsigned long pipe, void *buffer, int length)
+{
+	// ZF_LOGE("%s: dev='%s', udev=%p\n", __func__, dev->name, udev);
+	return _xhci_submit_bulk_msg(udev, pipe, buffer, length);
+}
 
-// static int xhci_submit_int_msg(struct udevice *dev, struct usb_device *udev,
-// 			       unsigned long pipe, void *buffer, int length,
-// 			       int interval, bool nonblock)
-// {
-// 	ZF_LOGE("%s: dev='%s', udev=%p\n", __func__, dev->name, udev);
-// 	return _xhci_submit_int_msg(udev, pipe, buffer, length, interval,
-// 				    nonblock);
-// }
+static int xhci_submit_int_msg(struct usb_device *udev,
+			       unsigned long pipe, void *buffer, int length,
+			       int interval, bool nonblock)
+{
+	// ZF_LOGE("%s: dev='%s', udev=%p\n", __func__, dev->name, udev);
+	return _xhci_submit_int_msg(udev, pipe, buffer, length, interval,
+				    nonblock);
+}
 
 int xhci_alloc_device(struct udevice *dev, struct usb_device *udev)
 {
@@ -1715,25 +1728,70 @@ static int xhci_schedule_xact(usb_host_t *hdev, uint8_t addr, int8_t hub_addr,
 		       usb_cb_t cb, void *t)
 {
 	struct usb_device* dev = usb_malloc(sizeof(*dev));
+	void* xact_data = 0;
+	int data_len = 0;
 	if(t == NULL) {
 		dev = hdev->drv_dev;
 	}
 	else {
 		dev = (struct usb_device*) t;
 	}
-	struct devrequest *req = (struct devrequest *) xact[0].vaddr; // index 0 is the request
+
+	struct devrequest * req = NULL;
+
+	if(ep->type != EP_BULK)
+		req = (struct devrequest *) xact[0].vaddr; // index 0 is the request
 	struct xhci_ctrl* ctrl = hdev->ctrl;
 	unsigned long pipe = 0;
-	if(req->requesttype & USB_DIR_IN){
-		pipe = usb_rcvctrlpipe(dev, 0); // maybe should be usb_rcvctrlpipe not def ?
-	}
-	else{
-		pipe = usb_sndctrlpipe(dev, 0);
-	}
-	// unsigned long pipe = usb_rcvctrlpipe(hdev->drv_dev, 0); // this needs to be double checked could be sus
-	//make pipe he
-	printf("We're inside of xact scheduling\n");
 
+	printf("We're inside of xact scheduling\n");
+	if(nxact > 1){
+		xact_data = (void*)xact[1].vaddr;
+		data_len = xact[1].len;
+	}
+
+	if(ep->type == EP_CONTROL){
+		ZF_LOGE("CTL endpoint");
+		if(req->requesttype & USB_DIR_IN){
+			pipe = usb_rcvctrlpipe(dev, 0); // maybe should be usb_rcvctrlpipe not def ?
+		}
+		else{
+			pipe = usb_sndctrlpipe(dev, 0);
+		}
+		return xhci_submit_control_msg(dev, pipe, (void*) xact_data, data_len, req);
+	}
+	else if(ep->type == EP_INTERRUPT){
+		ZF_LOGE("IRQ EP TYPE");
+		assert(nxact <= 1);
+		xact_data = (void*) req;
+		data_len = sizeof(*req);
+		if(req->requesttype & USB_DIR_IN){
+			pipe = usb_rcvintpipe(dev, ep->num + 1);
+		}
+		else{
+			pipe = usb_sndintpipe(dev, ep->num + 1);
+		}
+		return xhci_submit_int_msg(dev, pipe, (void*) xact_data, data_len, 0, 0); // interval and non block seem to be unused...
+	}
+	else if(ep->type == EP_BULK){
+		ZF_LOGE("BULK EP TYPE");
+		assert(nxact <= 1);
+		xact_data = (void*) xact->vaddr;
+		data_len = xact->len;
+		ZF_LOGE("Bulk data size is %d", data_len);
+		// if(req->requesttype & USB_DIR_IN){
+			// pipe = usb_rcvbulkpipe(dev, ep->num + 1); // do I need + 1? Who knows
+		// }
+		// else{
+		pipe = usb_sndbulkpipe(dev, ep->num); // assuming out just for now
+		// }
+		return xhci_submit_bulk_msg(dev, pipe, (void*) xact_data, data_len); // interval and non block seem to be unused.
+	}
+	else {
+		ZF_LOGF("unsupported ep type %d", ep->type);
+	}
+
+	// xhci_submit_int_msg(dev, pipe, )
 	/*
 	 - udev --> usb device?
 	 - pipe --> type of ctrl we're using here
@@ -1741,7 +1799,6 @@ static int xhci_schedule_xact(usb_host_t *hdev, uint8_t addr, int8_t hub_addr,
 	 - length --> the legnth of data to write
 	 - setup --> the device request
 	*/
-	return xhci_submit_control_msg(dev, pipe, (void*)xact[1].vaddr, xact[1].len, req);
 
 }
 
