@@ -1779,12 +1779,12 @@ static int xhci_schedule_xact(usb_host_t *hdev, uint8_t addr, int8_t hub_addr,
 		xact_data = (void*) xact->vaddr;
 		data_len = xact->len;
 		ZF_LOGE("Bulk data size is %d", data_len);
-		// if(req->requesttype & USB_DIR_IN){
-			// pipe = usb_rcvbulkpipe(dev, ep->num + 1); // do I need + 1? Who knows
-		// }
-		// else{
-		pipe = usb_sndbulkpipe(dev, ep->num); // assuming out just for now
-		// }
+		if(xact->type == PID_IN){
+			pipe = usb_rcvbulkpipe(dev, ep->num); // do I need + 1? Who knows
+		}
+		else{
+			pipe = usb_sndbulkpipe(dev, ep->num); // assuming out just for now
+		}
 		return xhci_submit_bulk_msg(dev, pipe, (void*) xact_data, data_len); // interval and non block seem to be unused.
 	}
 	else {

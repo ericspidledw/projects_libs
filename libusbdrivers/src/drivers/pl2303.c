@@ -70,12 +70,12 @@ pl2303_interrupt_cb(void* token, enum usb_xact_status stat, int rbytes)
 	struct pl2303_device *dev;
 	struct usb_dev *udev;
 
-	udev = (struct usb_dev*)token;
-	dev = (struct pl2303_device*)udev->dev_data;
+	udev = (struct usb_dev*)token; // token is pointer to our usb_dev struct
+	dev = (struct pl2303_device*)udev->dev_data; // dev_data is the PL2303 pointer
 
 	/* Queue another request */
 	err = usbdev_schedule_xact(udev, dev->ep_int, &dev->int_xact, 1,
-			pl2303_interrupt_cb, udev);
+			pl2303_interrupt_cb, udev); // schedule another TX
 	if (err) {
 		ZF_LOGF("Transaction error\n");
 	}
@@ -380,6 +380,7 @@ int usb_pl2303_read(usb_dev_t *udev, void *buf, int len)
 	}
 
 	memcpy(buf, xact_get_vaddr(&xact), len);
+	ZF_LOGE("buf is %s", buf);
 
 	usb_destroy_xact(udev->dman, &xact, 1);
 
