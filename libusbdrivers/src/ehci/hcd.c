@@ -218,6 +218,7 @@ void ehci_handle_irq(usb_host_t *hdev)
 	}
 
 	if (sts & EHCISTS_PORTC_DET) {
+		ZF_LOGE("We got a port change event...");
 		ZF_LOGD("INT - root hub port change\n");
 		_root_irq(edev);
 	}

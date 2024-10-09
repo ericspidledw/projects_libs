@@ -47,10 +47,10 @@ dma_addr_t xhci_trb_virt_to_dma(struct xhci_segment *seg,
 	}
 
 	ret = seg->dma + (segment_offset * sizeof(*trb));
-	ZF_LOGE("Ret returns %p", ret);
+	// ZF_LOGE("Ret returns %p", ret);
 	return ret;
 	err:
-	ZF_LOGE("Ret returns %p", ret);
+	// ZF_LOGE("Ret returns %p", ret);
 	return ret;
 }
 
@@ -222,7 +222,7 @@ static dma_addr_t queue_trb(struct xhci_ctrl *ctrl, struct xhci_ring *ring,
 
 	for (i = 0; i < 4; i++){
 		trb->field[i] = cpu_to_le32(trb_fields[i]);
-		printf("trb %d is 0x%lx\n", i, trb->field[i]);
+	// 	printf("trb %d is 0x%lx\n", i, trb->field[i]);
 	}
 
 	// xhci_flush_cache((uintptr_t)trb, sizeof(struct xhci_generic_trb));
@@ -246,12 +246,12 @@ static dma_addr_t queue_trb(struct xhci_ctrl *ctrl, struct xhci_ring *ring,
 static int prepare_ring(struct xhci_ctrl *ctrl, struct xhci_ring *ep_ring,
 							u32 ep_state)
 {
-	ZF_LOGE("Inside of prepare ring");
-	ZF_LOGE("ep ring is %p", ep_ring);
+	// ZF_LOGE("Inside of prepare ring");
+	// ZF_LOGE("ep ring is %p", ep_ring);
 	union xhci_trb *next = ep_ring->enqueue; // ep_ring --> enqueue is
 	assert(ctrl);
 	assert(ep_ring);
-	printf("Going into the switch\n");
+	// printf("Going into the switch\n");
 	/* Make sure the endpoint has been added to xHC schedule */
 	switch (ep_state) {
 	case EP_STATE_DISABLED:
@@ -269,7 +269,7 @@ static int prepare_ring(struct xhci_ctrl *ctrl, struct xhci_ring *ep_ring,
 		return -EINVAL;
 	case EP_STATE_STOPPED:
 	case EP_STATE_RUNNING:
-		printf("EP STATE RUNNING.\n");
+		ZF_LOGD("EP STATE RUNNING.\n");
 		break;
 	default:
 		printf("ERROR unknown endpoint state for ep\n");
@@ -316,14 +316,14 @@ int xhci_queue_command(struct xhci_ctrl *ctrl, dma_addr_t addr, u32 slot_id,
 	u32 fields[4];
 	int ret;
 
-	ZF_LOGE("Preparing the ring addr is %p", addr);
+	// ZF_LOGE("Preparing the ring addr is %p", addr);
 	ret = prepare_ring(ctrl, ctrl->cmd_ring, EP_STATE_RUNNING);
-	ZF_LOGE("WE made it out the ring");
+	// ZF_LOGE("WE made it out the ring");
 	if (ret < 0)
 		return ret;
 
 
-	ZF_LOGE("Setting the fields");
+	// ZF_LOGE("Setting the fields");
 	fields[0] = lower_32_bits(addr);
 	fields[1] = upper_32_bits(addr);
 	fields[2] = 0;
@@ -337,13 +337,13 @@ int xhci_queue_command(struct xhci_ctrl *ctrl, dma_addr_t addr, u32 slot_id,
 	if (cmd >= TRB_RESET_EP && cmd <= TRB_SET_DEQ)
 		fields[3] |= EP_ID_FOR_TRB(ep_index);
 
-	ZF_LOGE("QUEUE up the TRB");
+	// ZF_LOGE("QUEUE up the TRB");
 	queue_trb(ctrl, ctrl->cmd_ring, false, fields);
 
 	/* Ring the command ring doorbell */
-	ZF_LOGE("XHCI write the doorbell");
+	// ZF_LOGE("XHCI write the doorbell");
 	xhci_writel(&ctrl->dba->doorbell[0], DB_VALUE_HOST);
-	ZF_LOGE("Done writing to the doorbell");
+	// ZF_LOGE("Done writing to the doorbell");
 	return 0;
 }
 
@@ -550,7 +550,7 @@ static void reset_ep(struct usb_device *udev, int ep_index)
 	u64 addr;
 	u32 field;
 
-	printf("Resetting EP %d...\n", ep_index);
+	// printf("Resetting EP %d...\n", ep_index);
 	xhci_queue_command(ctrl, 0, udev->slot_id, ep_index, TRB_RESET_EP);
 	event = xhci_wait_for_event(ctrl, TRB_COMPLETION);
 	if (!event)
@@ -670,7 +670,7 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 	u32 length_field = 0;
 	struct xhci_ctrl *ctrl = xhci_get_ctrl(udev);
 	int slot_id = udev->slot_id;
-	ZF_LOGE("slot id is %d", slot_id);
+	// ZF_LOGE("slot id is %d", slot_id);
 	int ep_index;
 	struct xhci_virt_device *virt_dev;
 	struct xhci_ep_ctx *ep_ctx;
@@ -687,12 +687,12 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 	dma_addr_t last_transfer_trb_addr;
 	int available_length;
 
-	ZF_LOGE("dev=%p, pipe=%lx, buffer=%p, length=%d\n",
-		udev, pipe, buffer, length);
+	// ZF_LOGE("dev=%p, pipe=%lx, buffer=%p, length=%d\n",
+	// 	udev, pipe, buffer, length);
 
 	available_length = length;
 	ep_index = usb_pipe_ep_index(pipe);
-	ZF_LOGE("ep_index is %d", ep_index);
+	// ZF_LOGE("ep_index is %d", ep_index);
 	virt_dev = ctrl->devs[slot_id];
 
 	// xhci_inval_cache((uintptr_t)virt_dev->out_ctx->bytes,
@@ -741,8 +741,8 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 	ret = prepare_ring(ctrl, ring,
 			   le32_to_cpu(ep_ctx->ep_info) & EP_STATE_MASK);
 	if (ret < 0) {
-		ZF_LOGE("prepare ring failed in bulk tx");
-		ZF_LOGE("ep_index is %d", ep_index);
+		// ZF_LOGE("prepare ring failed in bulk tx");
+		// ZF_LOGE("ep_index is %d", ep_index);
 		return ret;
 	}
 
@@ -832,7 +832,7 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 again:
 	event = xhci_wait_for_event(ctrl, TRB_TRANSFER);
 	if (!event) {
-		ZF_LOGE("XHCI bulk transfer timed out, aborting...\n");
+		// ZF_LOGE("XHCI bulk transfer timed out, aborting...\n");
 		abort_td(udev, ep_index);
 		udev->status = USB_ST_NAK_REC;  /* closest thing to a timeout */
 		udev->act_len = 0;
@@ -887,15 +887,15 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 	union xhci_trb *event;
 	u32 remainder;
 
-	ZF_LOGE("Slot index is %d", slot_id);
-	ZF_LOGE("req=%u (%#x), type=%u (%#x), value=%u (%#x), index=%u\n",
+	// ZF_LOGE("Slot index is %d", slot_id);
+	ZF_LOGD("req=%u (%#x), type=%u (%#x), value=%u (%#x), index=%u\n",
 		req->request, req->request,
 		req->requesttype, req->requesttype,
 		le16_to_cpu(req->value), le16_to_cpu(req->value),
 		le16_to_cpu(req->index));
 
 	ep_index = usb_pipe_ep_index(pipe); // gotta figure out whats going with this pipe?
-	ZF_LOGE("Ep index is %d", ep_index);
+	// ZF_LOGE("Ep index is %d", ep_index);
 
 	ep_ring = virt_dev->eps[ep_index].ring; // grab our ring we allocated before
 
@@ -905,7 +905,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 	 */
 	if (udev->speed == USB_SPEED_FULL) { // use udev to get speed
 		ret = xhci_check_maxpacket(udev); // also to check maxpacket size
-		ZF_LOGE("ret after maxpacket is %d", ret);
+		// ZF_LOGE("ret after maxpacket is %d", ret);
 		if (ret < 0)
 			return ret;
 	}
@@ -934,7 +934,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 	ret = prepare_ring(ctrl, ep_ring,
 				le32_to_cpu(ep_ctx->ep_info) & EP_STATE_MASK); // we want 1
 
-	ZF_LOGE("Ret is %d", ret);
+	// ZF_LOGE("Ret is %d", ret);
 	if (ret < 0)
 		return ret;
 
@@ -946,7 +946,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 	start_trb = &ep_ring->enqueue->generic;
 	start_cycle = ep_ring->cycle_state;
 
-	ZF_LOGE("start_trb %p, start_cycle %d\n", start_trb, start_cycle);
+	// ZF_LOGE("start_trb %p, start_cycle %d\n", start_trb, start_cycle);
 
 	/* Queue setup TRB - see section 6.4.1.2.1 */
 	/* FIXME better way to translate setup_packet into two u32 fields? */
@@ -965,7 +965,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 		}
 	}
 
-	ZF_LOGE("req->requesttype = %d, req->request = %d, req->value = %d, req->index = %d, req->length = %d\n",
+	ZF_LOGD("req->requesttype = %d, req->request = %d, req->value = %d, req->index = %d, req->length = %d\n",
 	      req->requesttype, req->request, le16_to_cpu(req->value),
 	      le16_to_cpu(req->index), le16_to_cpu(req->length));
 
@@ -992,7 +992,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 				      usb_maxpacket(udev, pipe), true); // again max pacxket size
 	length_field = TRB_LEN(length) | TRB_TD_SIZE(remainder) |
 		       TRB_INTR_TARGET(0);
-	ZF_LOGE("length_field = %d, length = %d,"
+	ZF_LOGD("length_field = %d, length = %d,"
 		"xhci_td_remainder(length) = %d , TRB_INTR_TARGET(0) = %d\n",
 		length_field, TRB_LEN(length),
 		TRB_TD_SIZE(remainder), 0);
@@ -1000,7 +1000,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 	if (length > 0) {
 		if (req->requesttype & USB_DIR_IN)
 			field |= TRB_DIR_IN;
-	ZF_LOGE("DMA MAP for ctrl buffer ctrl is at %p buffer at %p and length is 0x%d", ctrl, buffer, length);
+	// ZF_LOGE("DMA MAP for ctrl buffer ctrl is at %p buffer at %p and length is 0x%d", ctrl, buffer, length);
 		buf_64 = xhci_dma_map(ctrl, buffer, length);
 
 		trb_fields[0] = lower_32_bits(buf_64);
@@ -1042,7 +1042,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 
 	record_transfer_result(udev, event, length); // use it to record a transfer result
 	xhci_acknowledge_event(ctrl);
-	ZF_LOGE("udev->status post event is %d", udev->status);
+	// ZF_LOGE("udev->status post event is %d", udev->status);
 	if (udev->status == USB_ST_STALLED) { // check udev status here
 		reset_ep(udev, ep_index); // use it to reset the endpoint
 		return -EPIPE;
@@ -1064,7 +1064,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 		xhci_acknowledge_event(ctrl);
 	}
 
-	ZF_LOGE("udev->status is %d", udev->status);
+	// ZF_LOGE("udev->status is %d", udev->status);
 
 	return (udev->status != USB_ST_NOT_PROC) ? 0 : -1; // returns status here
 

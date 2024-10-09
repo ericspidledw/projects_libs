@@ -1812,10 +1812,10 @@ static inline dma_addr_t xhci_dma_map(struct xhci_ctrl *ctrl, void* addr,
 {
 
 
-	ZF_LOGE("Allocating using the dma at %p", ctrl->dma_man);
-	ZF_LOGE("Pinning address %p", addr);
+	// ZF_LOGE("Allocating using the dma at %p", ctrl->dma_man);
+	// ZF_LOGE("Pinning address %p", addr);
 	dma_addr_t paddr = (dma_addr_t) ps_dma_pin(ctrl->dma_man, addr, size);
-	printf("Paddr is %p\n", paddr);
+	// printf("Paddr is %p\n", paddr);
 
 	// uintptr_t* vaddr = ps_dma_alloc_pinned(ctrl->dma_man, size, 32, 0, PS_MEM_NORMAL, (uintptr_t*)&addr);
 	// dma_addr_t paddr = (dma_addr_t) addr;
@@ -1828,7 +1828,7 @@ static inline dma_addr_t xhci_dma_map(struct xhci_ctrl *ctrl, void* addr,
 static void* xhci_malloc(struct xhci_ctrl* ctrl, size_t size)
 {
 	void* addr =  ps_dma_alloc(ctrl->dma_man, size, 0x1000, 0, PS_MEM_NORMAL); // 32 align for now
-	ZF_LOGE("malloc returning buffer %p", addr);
+	// ZF_LOGE("malloc returning buffer %p", addr);
 	return addr;
 }
 
@@ -1836,7 +1836,7 @@ static void* xhci_malloc(struct xhci_ctrl* ctrl, size_t size)
 static inline void xhci_dma_unmap(struct xhci_ctrl *ctrl, dma_addr_t addr,
 				  size_t size)
 {
-	ZF_LOGE("Free mem!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+	// ZF_LOGE("Free mem!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 	ps_dma_free(ctrl->dma_man, (void*)addr, size);
 }
 
@@ -1944,7 +1944,7 @@ static int xhci_parse_config(struct usb_device *dev,
 					if_desc[ifno].\
 					ep_desc[epno].\
 					wMaxPacketSize);
-			ZF_LOGE("if %d, ep %d\n", ifno, epno);
+			// ZF_LOGE("if %d, ep %d\n", ifno, epno);
 			break;
 		case USB_DT_SS_ENDPOINT_COMP:
 			if (head->bLength != USB_DT_SS_EP_COMP_SIZE) {

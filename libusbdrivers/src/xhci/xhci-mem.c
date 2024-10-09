@@ -291,20 +291,13 @@ static struct xhci_segment* xhci_segment_alloc(struct xhci_ctrl *ctrl)
 {
 	struct xhci_segment *seg; // this is our first segment
 
-	// ring->enqueue = ring->first_seg->trbs; // enqueu becomes the first segments' transfer request blocks...
-	// ring->enq_seg = ring->first_seg;
-	// ring->dequeue = ring->enqueue;
-	// ring->deq_seg = ring->first_seg;
-
-
-
 	seg = usb_malloc(sizeof(struct xhci_segment));
-	printf("seg is %p\n", seg);
+	// printf("seg is %p\n", seg);
 	assert(seg);
 	seg->trbs = xhci_malloc(ctrl, SEGMENT_SIZE);
-	ZF_LOGE("XHCI dma map before segment");
+	// ZF_LOGE("XHCI dma map before segment");
 	seg->dma = (dma_addr_t) xhci_dma_map(ctrl,  seg->trbs, SEGMENT_SIZE);
-	ZF_LOGE("Segment dma has %p and trb has %p", seg->dma, seg->trbs);
+	// ZF_LOGE("Segment dma has %p and trb has %p", seg->dma, seg->trbs);
 	// seg->trbs = xhci_dma_map(ctrl, &seg->dma, SEGMENT_SIZE);
 
 	seg->next = NULL;
@@ -334,7 +327,7 @@ struct xhci_ring *xhci_ring_alloc(struct xhci_ctrl *ctrl, unsigned int num_segs,
 	struct xhci_segment *prev;
 
 	ring = malloc(sizeof(struct xhci_ring));
-	ZF_LOGE("the ring is at addr %p", ring);
+	// ZF_LOGE("the ring is at addr %p", ring);
 
 	if (num_segs == 0)
 		return ring;
@@ -398,7 +391,7 @@ static int xhci_scratchpad_alloc(struct xhci_ctrl *ctrl)
 
 //  scratchpad->sp_array = (struct xhci_scratchpad *)xhci_dma_map(ctrl, &val_64,
 // 			      num_sp * sizeof(u64));
-ZF_LOGE("DMA MAP for scratchpad");
+// ZF_LOGE("DMA MAP for scratchpad");
 	val_64 = xhci_dma_map(ctrl,  scratchpad->sp_array,
 			      num_sp * sizeof(u64));
 	ctrl->dcbaa->dev_context_ptrs[0] = cpu_to_le64(val_64);
@@ -422,7 +415,7 @@ ZF_LOGE("DMA MAP for scratchpad");
 	// xhci_flush_cache((uintptr_t)buf, num_sp * ctrl->page_size);
 
 	scratchpad->scratchpad = buf;
-ZF_LOGE("DMA MAP for scratchpad2");
+// ZF_LOGE("DMA MAP for scratchpad2");
 	val_64 = xhci_dma_map(ctrl, buf, num_sp * ctrl->page_size);
 	// buf = xhci_dma_map(ctrl, &val_64 , num_sp * ctrl->page_size);
 	for (i = 0; i < num_sp; i++) {
@@ -467,9 +460,9 @@ static struct xhci_container_ctx
 		ctx->size += CTX_SIZE(xhci_readl(&ctrl->hccr->cr_hccparams));
 
 	ctx->bytes = xhci_malloc(ctrl, ctx->size);
-	ZF_LOGE("context bytes is at %p", ctx->bytes);
+	// ZF_LOGE("context bytes is at %p", ctx->bytes);
 	ctx->dma = xhci_dma_map(ctrl, ctx->bytes, ctx->size);
-	ZF_LOGE("context dma is at %p", ctx->dma);
+	// ZF_LOGE("context dma is at %p", ctx->dma);
 
 	return ctx;
 }
@@ -523,7 +516,7 @@ int xhci_alloc_virt_device(struct xhci_ctrl *ctrl, unsigned int slot_id)
 	byte_64 = virt_dev->out_ctx->dma;
 
 	/* Point to output device context in dcbaa. */
-	ZF_LOGE("putting %p in the dev context pointers", byte_64);
+	// ZF_LOGE("putting %p in the dev context pointers", byte_64);
 	ctrl->dcbaa->dev_context_ptrs[slot_id] = cpu_to_le64(byte_64);
 
 	// xhci_flush_cache((uintptr_t)&ctrl->dcbaa->dev_context_ptrs[slot_id],
@@ -558,17 +551,17 @@ int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
 		return -ENOMEM;
 	}
 
-	ZF_LOGE("init dcbaa dma");
+	// ZF_LOGE("init dcbaa dma");
 	ctrl->dcbaa->dma = (dma_addr_t) xhci_dma_map(ctrl, ctrl->dcbaa,
 				sizeof(struct xhci_device_context_array));
-	ZF_LOGE("done init dcbaa dma");
+	// ZF_LOGE("done init dcbaa dma");
 
 	/* Set the pointer in DCBAA register */
 	xhci_writeq(&hcor->or_dcbaap, ctrl->dcbaa->dma);
 
 	/* Command ring control pointer register initialization */
 	ctrl->cmd_ring = xhci_ring_alloc(ctrl, 1, true); // allocates the command ring...
-	ZF_LOGE("Command ring is %p", ctrl->cmd_ring);
+	// ZF_LOGE("Command ring is %p", ctrl->cmd_ring);
 
 	/* Set the address in the Command Ring Control register */
 	trb_64 = ctrl->cmd_ring->first_seg->dma;
@@ -595,7 +588,7 @@ int xhci_mem_init(struct xhci_ctrl *ctrl, struct xhci_hccr *hccr,
 	ctrl->event_ring = xhci_ring_alloc(ctrl, ERST_NUM_SEGS, false);
 	ctrl->erst.entries = xhci_malloc(ctrl, sizeof(struct xhci_erst_entry) *
 					 ERST_NUM_SEGS);
-	ZF_LOGE("address of entries is %p", ctrl->erst.entries);
+	// ZF_LOGE("address of entries is %p", ctrl->erst.entries);
 	ctrl->erst.erst_dma_addr = (dma_addr_t) xhci_dma_map(ctrl, ctrl->erst.entries,
 			sizeof(struct xhci_erst_entry) * ERST_NUM_SEGS);
 	// ctrl->erst.entries = (struct xhci_erst_entry*) xhci_dma_map(ctrl, &ctrl->erst.erst_dma_addr,
@@ -794,7 +787,7 @@ void xhci_setup_addressable_virt_dev(struct xhci_ctrl *ctrl,
 	int slot_id = udev->slot_id;
 	int speed = udev->speed;
 	int route = 0;
-	ZF_LOGE("Check speed here %d", udev->speed);
+	// ZF_LOGE("Check speed here %d", udev->speed);
 	// struct usb_device *dev = udev;
 	// struct usb_hub_device *hub;
 
@@ -880,7 +873,7 @@ void xhci_setup_addressable_virt_dev(struct xhci_ctrl *ctrl,
 	/* Step 4 - ring already allocated */
 	/* Step 5 */
 	ep0_ctx->ep_info2 = cpu_to_le32(EP_TYPE(CTRL_EP));
-	ZF_LOGE("SPEED = %d\n", speed);
+	// ZF_LOGE("SPEED = %d\n", speed);
 
 	switch (speed) {
 	case USB_SPEED_SUPER:

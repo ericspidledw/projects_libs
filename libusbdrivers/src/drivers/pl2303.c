@@ -149,8 +149,6 @@ static void print_transactions(struct xact* xacts, int nxact){
 int usb_pl2303_bind(usb_dev_t *udev)
 {
 
-	ZF_LOGE("Yep we're in the pl2303 bind");
-
 	int err;
 	struct pl2303_device *dev;
 	struct xact xact;
@@ -215,18 +213,14 @@ int usb_pl2303_bind(usb_dev_t *udev)
 	ZF_LOGE("dev config index is %d", dev->config);
 	*req = __set_configuration_req(dev->config); /// dev->config??
 
-//num_of_ep = udev->config.if_desc[0].no_of_ep;
 	/* Send the request to the host */
-	ZF_LOGE("Right before the magic????????");
 	err = usbdev_schedule_xact(udev, udev->ep_ctrl, &xact, 1, NULL, NULL);
 	if (err) {
 		ZF_LOGF("Transaction error\n");
 	}
 	usb_destroy_xact(udev->dman, &xact, 1);
 
-	ZF_LOGE("going into some magic...");
 	pl2303_startup_magic(udev);
-	ZF_LOGE("MAde it out the magic ");
 
 	/* Allocate interrupt xact */
 	dev->int_xact.type = PID_IN;

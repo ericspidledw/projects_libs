@@ -171,7 +171,7 @@ usb_hcd_schedule(usb_host_t* hdev, uint8_t addr, uint8_t hub_addr, uint8_t hub_p
                  enum usb_speed speed, struct endpoint *ep,
                  struct xact* xact, int nxact, usb_cb_t cb, void* t)
 {
-    ZF_LOGE("Inside the hcd scheduler");
+    // ZF_LOGE("Inside the hcd scheduler");
     if(hdev->schedule_xact){
         return hdev->schedule_xact(hdev, addr, hub_addr, hub_port, speed, ep,
                                xact, nxact, cb, t);
