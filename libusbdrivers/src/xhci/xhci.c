@@ -1679,6 +1679,8 @@ static void xhci_handle_irq(usb_host_t *hdev) {
 		clear_irq: // currentlty assumes first interrupter is the one that is pending
 			ZF_LOGE("Clearing IRQ!!!!");
 			xhci_writel(&ctrl->ir_set[0].irq_pending, 0x1); // clear irq
+			ZF_LOGE("Cleared IRQ dumping interrupter");
+			dump_interrupter(ctrl->ir_set);
 		// err = xhci_handle_event_trb(xhci, ir, ir->event_ring->dequeue);
 
 		/*
@@ -1763,10 +1765,12 @@ static int xhci_schedule_xact(usb_host_t *hdev, uint8_t addr, int8_t hub_addr,
 		xact_data = (void*) req;
 		data_len = sizeof(*req);
 		if(req->requesttype & USB_DIR_IN){
-			pipe = usb_rcvintpipe(dev, ep->num + 1);
+			ZF_LOGE("IN IRQ ep num is %d", ep->num);
+			pipe = usb_rcvintpipe(dev, ep->num);
 		}
 		else{
-			pipe = usb_sndintpipe(dev, ep->num + 1);
+			ZF_LOGE("Out IRQ ep num is %d", ep->num);
+			pipe = usb_sndintpipe(dev, ep->num);
 		}
 		return xhci_submit_int_msg(dev, pipe, (void*) xact_data, data_len, 0, 0); // interval and non block seem to be unused...
 	}

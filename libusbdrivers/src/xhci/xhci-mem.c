@@ -697,6 +697,7 @@ struct xhci_ep_ctx *xhci_get_ep_ctx(struct xhci_ctrl *ctrl,
 		(ep_index * CTX_SIZE(xhci_readl(&ctrl->hccr->cr_hccparams))));
 }
 
+
 // /**
 //  * Copy output xhci_ep_ctx to the input xhci_ep_ctx copy.
 //  * Useful when you want to change one particular aspect of the endpoint

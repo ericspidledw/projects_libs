@@ -165,7 +165,7 @@ int usb_pl2303_bind(usb_dev_t *udev)
 	}
 
 	dev->udev = udev; // passing our device to the one passed in.....
-	udev->dev_data = (struct udev_priv*)dev; // right now our dev is the root device????
+	udev->dev_data = (struct udev_priv*)dev;
 
 	/* Parse the descriptors */
 	err = usbdev_parse_config(udev, pl2303_config_cb, dev);
@@ -185,7 +185,7 @@ int usb_pl2303_bind(usb_dev_t *udev)
 				dev->ep_in = udev->ep[i];
 			}
 		} else if (udev->ep[i]->type == EP_INTERRUPT) {
-			ZF_LOGE("Interrupt EP");
+			ZF_LOGE("Interrupt EP at index %d", i);
 			dev->ep_int = udev->ep[i];
 		} else {
 			continue;
@@ -233,6 +233,7 @@ int usb_pl2303_bind(usb_dev_t *udev)
 		ZF_LOGF("Out of DMA memory\n");
 	}
 
+	ZF_LOGE("dev->ep_int num is %d", dev->ep_int->num);
 	/* Schedule a interrupt request */
 	err = usbdev_schedule_xact(udev, dev->ep_int, &dev->int_xact, 1,
 			pl2303_interrupt_cb, udev);

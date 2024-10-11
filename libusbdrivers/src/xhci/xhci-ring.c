@@ -692,13 +692,31 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 
 	available_length = length;
 	ep_index = usb_pipe_ep_index(pipe);
-	// ZF_LOGE("ep_index is %d", ep_index);
+	ZF_LOGE("ep_index is %d", ep_index);
 	virt_dev = ctrl->devs[slot_id];
 
 	// xhci_inval_cache((uintptr_t)virt_dev->out_ctx->bytes,
 	// 		 virt_dev->out_ctx->size);
 
+	uint32_t tmp_index = 0;
+	// struct xhci_ep_ctx tmp;
+	// while(1) {
+	// 	tmp = *(struct xhci_ep_ctx*)(virt_dev->out_ctx->bytes +
+	// 	(tmp_index * CTX_SIZE(xhci_readl(&ctrl->hccr->cr_hccparams))));
+	// 	ZF_LOGE("Type is %d index is %d", (tmp.ep_info2 & 0x38) >> 3, tmp_index);
+	// 	tmp_index += 1;
+	// 	if((tmp.ep_info2 & 0x38) == 0x18)
+	// 		break;
+	// }
+	// ZF_LOGE("Interrupt type ep is at index %d", index);
+
+	for(int i=0; i < 25; i++){
+		ep_ctx = xhci_get_ep_ctx(ctrl, virt_dev->out_ctx, i);
+		ZF_LOGE("Ep %d type is %d", i + 1, (ep_ctx->ep_info2 & 0x38) >> 3); // check our irq typ
+	}
+
 	ep_ctx = xhci_get_ep_ctx(ctrl, virt_dev->out_ctx, ep_index);
+	ZF_LOGE("CHECKING IRQ EP!!!: Ep type is %d", (ep_ctx->ep_info2 & 0x38)); // check our irq typ
 
 	/*
 	 * If the endpoint was halted due to a prior error, resume it before
@@ -794,6 +812,7 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 		if (num_trbs > 1) {
 			field |= TRB_CHAIN;
 		} else {
+			ZF_LOGE("We've got an IOC bit set here....");
 			field |= TRB_IOC;
 			more_trbs_coming = false;
 		}
@@ -809,7 +828,7 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 
 		length_field = (TRB_LEN(trb_buff_len) |
 				TRB_TD_SIZE(remainder) |
-				TRB_INTR_TARGET(0));
+				TRB_INTR_TARGET(0)); // always targets 0...
 
 		trb_fields[0] = lower_32_bits(addr);
 		trb_fields[1] = upper_32_bits(addr);

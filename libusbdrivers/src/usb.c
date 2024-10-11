@@ -626,6 +626,9 @@ parse_config(struct usb_dev *udev, struct anon_desc *d, int tot_len,
 			ep->max_pkt = edsc->wMaxPacketSize;
 			ep->interval = edsc->bInterval;
 
+			if(ep->type == EP_INTERRUPT)
+				ZF_LOGE("cnt is %d Ep max_pkt is %d, interval is %d, num is %d, and dir is %d", cnt, ep->max_pkt, ep->interval, edsc->bInterval, ep->dir);
+
 			udev->ep[cnt++] = ep;
 			break;
 		default:
