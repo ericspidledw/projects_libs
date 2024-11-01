@@ -754,6 +754,7 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 		create_xhci_driver_device(udev, host->hdev.drv_dev);
 	}
 
+
 	/*
 	 * Work out the TT hub for full/low speed devices.
 	 * Assuming all high speed hubs have TT.
@@ -803,7 +804,7 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 		return -1;
 	}
 	// printf("Get xact vaddr\n");
-	req = xact_get_vaddr(&xact[0]); // get our virtaul address for the request
+	req = xact_get_vaddr(&xact[0]); // get our virtual address for the request
 	d_desc = xact_get_vaddr(&xact[1]); // get our virtual address for device descriptor
 
 	/* USB transactions are O(n) when trying to bind a driver.
@@ -855,19 +856,19 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 	// printf("Find the next available addr for devlist insert\n");
 	// print_descriptor(d_desc);
 	// printf("We got the descriptors pausing execution now....\n");
-	if(!usb_driver){
-	addr = devlist_insert(udev);
-	if (addr < 0) {
-		ZF_LOGE("USB: Too many devices\n");
-		usb_destroy_xact(udev->dman, xact,
-				 sizeof(xact) / sizeof(*xact));
-		usb_free(udev);
-		udev = NULL;
-		return -1;
-	}
+	if(!usb_driver) { // if for root hub
+		addr = devlist_insert(udev);
+		if (addr < 0) {
+			ZF_LOGE("USB: Too many devices\n");
+			usb_destroy_xact(udev->dman, xact,
+					 sizeof(xact) / sizeof(*xact));
+			usb_free(udev);
+			udev = NULL;
+			return -1;
+		}
 	}
 
-	if(usb_driver) {
+	if(usb_driver) { // if for USB function
 		ZF_LOGE("USB driver passed in");
 		udev->drv_dev = usb_driver;
 		udev->addr = usb_driver->devnum;
@@ -884,16 +885,17 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 		ps_udelay(1000 * 2); // 2ms delay
 		ZF_LOGE("USB %d: Retrieving device descriptor\n", udev->addr);
 
-		usb_driver->epmaxpacketin[0] = 64; // try hard codin first...
+
 		// /* Read max packet size descriptors */
 		// xact[1].len = 8;
-		// *req = __new_desc_req(DEVICE, 8);
+		// *req = __new_desc_req(DEVICE, 8); // assume size of 8 for first read,
 		// err = usbdev_schedule_xact(udev, udev->ep_ctrl, xact, 2, NULL, usb_driver);
 		// print_descriptor(d_desc);
 
 		// ZF_LOGE("Got max packet desc...");
 		// while(1);
-
+		// assert(!err);
+		usb_driver->epmaxpacketin[0] = 64; //  TODO!!!!!need to read this in from hw desc
 
 		/* Read full descriptors */
 		xact[1].len = sizeof(*d_desc);
@@ -912,7 +914,8 @@ usb_new_device_with_host(struct usb_dev *hub, usb_t * host, int port,
 		udev->class = d_desc->bDeviceClass;
 		// ZF_LOGE("udev addr is %d", udev->addr);
 
-		udev->addr = host->next_addr; // this is so hard coded let's just see thopp
+		udev->addr = host->next_addr; // this is so hard coded let's just see tho
+		ZF_LOGE("Inserting device at %d", udev->addr);
 		uint32_t addr = devlist_insert(udev);
 		// ZF_LOGE("We inserted the device at 0x%lx", addr);
 		usb_destroy_xact(udev->dman, xact, sizeof(xact) / sizeof(*xact));
@@ -1085,7 +1088,7 @@ usb_init(enum usb_host_id id, ps_io_ops_t * ioops, ps_mutex_ops_t * sync,
 		ZF_LOGE("USB: Platform error\n");
 		return -1;
 	}
-	// printf("Entering new device with host\n");
+	printf("Entering new device with host\n");
 	err = usb_new_device_with_host(NULL, host, 1, 0, &udev, NULL); // pass in NULL, host, 1, 0, pointer to usb dev
 	if (err) {
 		ZF_LOGE("USB: Host error\n");
@@ -1178,7 +1181,9 @@ int usbdev_parse_config(usb_dev_t *udev, usb_config_cb cb, void *t)
 	/* Now loop through descriptors */
 	print_anon_desc(d);
 	err = parse_config(udev, d, tot_len, cb, t);// this parses for seL4's struct
-	xhci_parse_config(udev->drv_dev, (char*)d, 0); // for now this is a 1 we need a better way to determine this...
+	ZF_LOGE("Parse the config for the device");
+	xhci_parse_config(udev->drv_dev, (char*)d, 0); // assume first and only config rn
+	xhci_set_maxpacket(udev->drv_dev); // need to populate max packet size for ctl too...
 	usb_destroy_xact(udev->dman, xact, sizeof(xact) / sizeof(*xact));
 	return err;
 }
@@ -1257,7 +1262,11 @@ int
 usbdev_schedule_xact(usb_dev_t *udev, struct endpoint *ep, struct xact *xact,
 		     int nxact, usb_cb_t cb, void *token)
 {
-	// ZF_LOGE("we in the schedule transaction");
+
+	struct token_struct the_token;
+	the_token.driver_device = 0;
+	the_token.token_val = 0;
+	the_token.token_val = token;
 	int err;
 	usb_host_t *hdev;
 	uint8_t hub_addr;
@@ -1272,16 +1281,16 @@ usbdev_schedule_xact(usb_dev_t *udev, struct endpoint *ep, struct xact *xact,
 	ZF_LOGE("Set hub addr to %p", udev->tt_addr);
 		hub_addr = udev->tt_addr;
 	} else {
-		// ZF_LOGE("No address for hub");
 		hub_addr = -1;
 	}
 	if(udev->drv_dev){
 		// ZF_LOGE("Setting driver device");
-		token = (void*)udev->drv_dev; // assign token value
+		the_token.driver_device = udev->drv_dev; // assign token value
+		// ZF_LOGE("the token driver device is %p", the_token.driver_device);
 	}
 	err =
 	    usb_hcd_schedule(hdev, udev->addr, hub_addr, udev->tt_port,
-			     udev->speed, ep, xact, nxact, cb, token);
+			     udev->speed, ep, xact, nxact, cb, &the_token);
 	return err;
 }
 
@@ -1328,9 +1337,11 @@ int usb_alloc_xact(ps_dma_man_t * dman, struct xact *xact, int nxact)
 						PS_MEM_NORMAL, &xact[i].paddr);
 			if (xact[i].vaddr == NULL) {
 				usb_destroy_xact(dman, xact, i);
+				ZF_LOGE("We got a memory allocation error ");
 				return -1;
 			}
 		} else {
+			ZF_LOGE("Zero size transaction requested");
 			xact[i].vaddr = NULL;
 		}
 	}

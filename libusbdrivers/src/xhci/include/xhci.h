@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 
+
 typedef uint32_t 	u32;
 typedef uint32_t 	__u32;
 typedef uint32_t 	__le32;
@@ -137,7 +138,7 @@ static inline int generic_fls(int x)
 #define MAX_EP_CTX_NUM		31
 #define XHCI_ALIGNMENT		64
 /* Generic timeout for XHCI events */
-#define XHCI_TIMEOUT		5000
+#define XHCI_TIMEOUT		500
 /* Max number of USB devices for any host controller - limit in section 6.1 */
 #define MAX_HC_SLOTS            256
 /* Section 5.3.3 - MaxPorts */
@@ -685,16 +686,20 @@ struct usb_config {
 #define	XDEV_LS			(0x2 << 10)
 #define	XDEV_HS			(0x3 << 10)
 #define	XDEV_SS			(0x4 << 10)
+#define XDEV_SSP		(0x5 << 10)
+
 #define DEV_UNDEFSPEED(p)	(((p) & DEV_SPEED_MASK) == (0x0<<10))
 #define DEV_FULLSPEED(p)	(((p) & DEV_SPEED_MASK) == XDEV_FS)
 #define DEV_LOWSPEED(p)		(((p) & DEV_SPEED_MASK) == XDEV_LS)
 #define DEV_HIGHSPEED(p)	(((p) & DEV_SPEED_MASK) == XDEV_HS)
 #define DEV_SUPERSPEED(p)	(((p) & DEV_SPEED_MASK) == XDEV_SS)
+#define DEV_SUPERSPEEDPLUS(p)	(((p) & DEV_SPEED_MASK) == XDEV_SSP)
 /* Bits 20:23 in the Slot Context are the speed for the device */
 #define	SLOT_SPEED_FS		(XDEV_FS << 10)
 #define	SLOT_SPEED_LS		(XDEV_LS << 10)
 #define	SLOT_SPEED_HS		(XDEV_HS << 10)
 #define	SLOT_SPEED_SS		(XDEV_SS << 10)
+#define SLOT_SPEED_SSP		(XDEV_SSP << 10)
 /* Port Indicator Control */
 #define PORT_LED_OFF	(0 << 14)
 #define PORT_LED_AMBER	(1 << 14)
@@ -946,13 +951,13 @@ struct xhci_slot_ctx {
  * The Slot ID of the hub that isolates the high speed signaling from
  * this low or full-speed device.  '0' if attached to root hub port.
  */
-#define TT_SLOT(p)		(((p) & 0xff) << 0)
+// #define TT_SLOT(p)		(((p) & 0xff) << 0)
 /*
  * The number of the downstream facing port of the high-speed hub
  * '0' if the device is not low or full speed.
  */
-#define TT_PORT(p)		(((p) & 0xff) << 8)
-#define TT_THINK_TIME(p)	(((p) & 0x3) << 16)
+// #define TT_PORT(p)		(((p) & 0xff) << 8)
+// #define TT_THINK_TIME(p)	(((p) & 0x3) << 16)
 
 /* dev_state bitmasks */
 /* USB device address - assigned by the HC */
@@ -1775,6 +1780,8 @@ int usb_maxpacket(struct usb_device *dev, unsigned long pipe);
 void udelay(uint64_t us);
 uint64_t timeout_time();
 int event_ready(struct xhci_ctrl *ctrl);
+int ring_event_ready(struct xhci_ring* ring);
+void inc_deq(struct xhci_ctrl *ctrl, struct xhci_ring *ring);
 
 
 
@@ -1840,6 +1847,72 @@ static inline void xhci_dma_unmap(struct xhci_ctrl *ctrl, dma_addr_t addr,
 	ps_dma_free(ctrl->dma_man, (void*)addr, size);
 }
 
+
+#include "./xhci-debug.h"
+
+/*
+ * The routine usb_set_maxpacket_ep() is extracted from the loop of routine
+ * usb_set_maxpacket(), because the optimizer of GCC 4.x chokes on this routine
+ * when it is inlined in 1 single routine. What happens is that the register r3
+ * is used as loop-count 'i', but gets overwritten later on.
+ * This is clearly a compiler bug, but it is easier to workaround it here than
+ * to update the compiler (Occurs with at least several GCC 4.{1,2},x
+ * CodeSourcery compilers like e.g. 2007q3, 2008q1, 2008q3 lite editions on ARM)
+ *
+ * NOTE: Similar behaviour was observed with GCC4.6 on ARMv5.
+ */
+static void  __attribute__((__noinline__)) xhci_set_maxpacket_ep(struct usb_device *dev, int if_idx, int ep_idx)
+{
+	int b;
+	struct usb_endpoint_descriptor *ep;
+	u16 ep_wMaxPacketSize;
+
+	ep = &dev->config.if_desc[if_idx].ep_desc[ep_idx];
+
+	b = ep->bEndpointAddress & USB_ENDPOINT_NUMBER_MASK;
+	ep_wMaxPacketSize = get_unaligned(&ep->wMaxPacketSize);
+
+	if ((ep->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) ==
+						USB_ENDPOINT_XFER_CONTROL) {
+		/* Control => bidirectional */
+		dev->epmaxpacketout[b] = ep_wMaxPacketSize;
+		dev->epmaxpacketin[b] = ep_wMaxPacketSize;
+		ZF_LOGE("##Control EP epmaxpacketout/in[%d] = %d",
+		      b, dev->epmaxpacketin[b]);
+	} else {
+		if ((ep->bEndpointAddress & 0x80) == 0) {
+			/* OUT Endpoint */
+			if (ep_wMaxPacketSize > dev->epmaxpacketout[b]) {
+				dev->epmaxpacketout[b] = ep_wMaxPacketSize;
+				ZF_LOGE("##EP epmaxpacketout[%d] = %d",
+				      b, dev->epmaxpacketout[b]);
+			}
+		} else {
+			/* IN Endpoint */
+			if (ep_wMaxPacketSize > dev->epmaxpacketin[b]) {
+				dev->epmaxpacketin[b] = ep_wMaxPacketSize;
+				ZF_LOGE("##EP epmaxpacketin[%d] = %d",
+				      b, dev->epmaxpacketin[b]);
+			}
+		} /* if out */
+	} /* if control */
+}
+
+/*
+ * set the max packed value of all endpoints in the given configuration
+ */
+static int xhci_set_maxpacket(struct usb_device *dev)
+{
+	int i, ii;
+
+	for (i = 0; i < dev->config.desc.bNumInterfaces; i++)
+		for (ii = 0; ii < dev->config.if_desc[i].desc.bNumEndpoints; ii++)
+			xhci_set_maxpacket_ep(dev, i, ii);
+
+	return 0;
+}
+
+
 static int xhci_parse_config(struct usb_device *dev,
 			unsigned char *buffer, int cfgno)
 {
@@ -1854,6 +1927,7 @@ static int xhci_parse_config(struct usb_device *dev,
 
 	dev->configno = cfgno;
 	head = (struct usb_descriptor_header *) &buffer[0];
+	xhci_usb_print_descriptor(head, 0);
 	if (head->bDescriptorType != USB_DT_CONFIG) {
 		printf(" ERROR: NOT USB_CONFIG_DESC %x\n",
 			head->bDescriptorType);
@@ -1871,6 +1945,7 @@ static int xhci_parse_config(struct usb_device *dev,
 	 * now process the others */
 	head = (struct usb_descriptor_header *) &buffer[index];
 	while (index + 1 < dev->config.desc.wTotalLength && head->bLength) {
+		xhci_usb_print_descriptor(head, index);
 		switch (head->bDescriptorType) {
 		case USB_DT_INTERFACE:
 			if (head->bLength != USB_DT_INTERFACE_SIZE) {
@@ -1903,6 +1978,7 @@ static int xhci_parse_config(struct usb_device *dev,
 			} else {
 				/* found alternate setting for the interface */
 				if (ifno >= 0) {
+					ZF_LOGF("We found an alternate setting for the interface (sure hope not)");
 					if_desc = &dev->config.if_desc[ifno];
 					if_desc->num_altsetting++;
 				}
@@ -1925,7 +2001,7 @@ static int xhci_parse_config(struct usb_device *dev,
 				break;
 			}
 			epno = dev->config.if_desc[ifno].no_of_ep;
-			ZF_LOGE("Epno is %d", epno);
+			ZF_LOGE("PARSE CONFIG epno  is %d", epno);
 			if_desc = &dev->config.if_desc[ifno];
 			if (epno >= USB_MAXENDPOINTS) {
 				printf("Interface %d has too many endpoints!\n",
@@ -1936,10 +2012,12 @@ static int xhci_parse_config(struct usb_device *dev,
 			if_desc->no_of_ep++;
 			memcpy(&if_desc->ep_desc[epno], head,
 				USB_DT_ENDPOINT_SIZE);
+			ZF_LOGE("Copied the endpoint to index %d", epno);
 			ep_wMaxPacketSize = get_unaligned(&dev->config.\
 							if_desc[ifno].\
 							ep_desc[epno].\
 							wMaxPacketSize);
+			ZF_LOGE("Ep maxpacket size is %d for epno %d on interface %d", ep_wMaxPacketSize, epno, ifno);
 			put_unaligned(le16_to_cpu(ep_wMaxPacketSize),
 					&dev->config.\
 					if_desc[ifno].\
@@ -1991,6 +2069,701 @@ static int xhci_parse_config(struct usb_device *dev,
 	return 0;
 }
 
+#define TRB_TC (1<<1)
+#define EVENT_DATA (1<<2)
+/* Address device - disable SetAddress */
+#define TRB_BSR		(1<<9)
+
+/* Configure Endpoint - Deconfigure */
+#define TRB_DC		(1<<9)
+
+/* Stop Ring - Transfer State Preserve */
+#define TRB_TSP		(1<<9)
+
+#define XHCI_MSG_MAX 500
+
+/* Force Event */
+#define TRB_TO_VF_INTR_TARGET(p)	(((p) & (0x3ff << 22)) >> 22)
+#define TRB_TO_VF_ID(p)			(((p) & (0xff << 16)) >> 16)
+
+/* Set Latency Tolerance Value */
+#define TRB_TO_BELT(p)			(((p) & (0xfff << 16)) >> 16)
+
+/* Get Port Bandwidth */
+#define TRB_TO_DEV_SPEED(p)		(((p) & (0xf << 16)) >> 16)
+
+/* Force Header */
+#define TRB_TO_PACKET_TYPE(p)		((p) & 0x1f)
+#define TRB_TO_ROOTHUB_PORT(p)		(((p) & (0xff << 24)) >> 24)
+
+
+/* Normal TRB fields */
+/* transfer_len bitmasks - bits 0:16 */
+#define	TRB_LEN(p)		((p) & 0x1ffff)
+/* TD Size, packets remaining in this TD, bits 21:17 (5 bits, so max 31) */
+#define TRB_TD_SIZE(p)          (min((p), (u32)31) << 17)
+#define GET_TD_SIZE(p)		(((p) & 0x3e0000) >> 17)
+/* xhci 1.1 uses the TD_SIZE field for TBC if Extended TBC is enabled (ETE) */
+#define TRB_TD_SIZE_TBC(p)      (min((p), (u32)31) << 17)
+/* Interrupter Target - which MSI-X vector to target the completion event at */
+#define TRB_INTR_TARGET(p)	(((p) & 0x3ff) << 22)
+#define GET_INTR_TARGET(p)	(((p) >> 22) & 0x3ff)
+/* Total burst count field, Rsvdz on xhci 1.1 with Extended TBC enabled (ETE) */
+#define TRB_TBC(p)		(((p) & 0x3) << 7)
+#define TRB_TLBPC(p)		(((p) & 0xf) << 16)
+
+
+
+/* Completion Code - only applicable for some types of TRBs */
+#define	COMP_CODE_MASK		(0xff << 24)
+#define GET_COMP_CODE(p)	(((p) & COMP_CODE_MASK) >> 24)
+#define COMP_INVALID				0
+#define COMP_SUCCESS				1
+#define COMP_DATA_BUFFER_ERROR			2
+#define COMP_BABBLE_DETECTED_ERROR		3
+#define COMP_USB_TRANSACTION_ERROR		4
+#define COMP_TRB_ERROR				5
+#define COMP_STALL_ERROR			6
+#define COMP_RESOURCE_ERROR			7
+#define COMP_BANDWIDTH_ERROR			8
+#define COMP_NO_SLOTS_AVAILABLE_ERROR		9
+#define COMP_INVALID_STREAM_TYPE_ERROR		10
+#define COMP_SLOT_NOT_ENABLED_ERROR		11
+#define COMP_ENDPOINT_NOT_ENABLED_ERROR		12
+#define COMP_SHORT_PACKET			13
+#define COMP_RING_UNDERRUN			14
+#define COMP_RING_OVERRUN			15
+#define COMP_VF_EVENT_RING_FULL_ERROR		16
+#define COMP_PARAMETER_ERROR			17
+#define COMP_BANDWIDTH_OVERRUN_ERROR		18
+#define COMP_CONTEXT_STATE_ERROR		19
+#define COMP_NO_PING_RESPONSE_ERROR		20
+#define COMP_EVENT_RING_FULL_ERROR		21
+#define COMP_INCOMPATIBLE_DEVICE_ERROR		22
+#define COMP_MISSED_SERVICE_ERROR		23
+#define COMP_COMMAND_RING_STOPPED		24
+#define COMP_COMMAND_ABORTED			25
+#define COMP_STOPPED				26
+#define COMP_STOPPED_LENGTH_INVALID		27
+#define COMP_STOPPED_SHORT_PACKET		28
+#define COMP_MAX_EXIT_LATENCY_TOO_LARGE_ERROR	29
+#define COMP_ISOCH_BUFFER_OVERRUN		31
+#define COMP_EVENT_LOST_ERROR			32
+#define COMP_UNDEFINED_ERROR			33
+#define COMP_INVALID_STREAM_ID_ERROR		34
+#define COMP_SECONDARY_BANDWIDTH_ERROR		35
+#define COMP_SPLIT_TRANSACTION_ERROR		36
+
+static inline const char *xhci_trb_comp_code_string(u8 status)
+{
+	switch (status) {
+	case COMP_INVALID:
+		return "Invalid";
+	case COMP_SUCCESS:
+		return "Success";
+	case COMP_DATA_BUFFER_ERROR:
+		return "Data Buffer Error";
+	case COMP_BABBLE_DETECTED_ERROR:
+		return "Babble Detected";
+	case COMP_USB_TRANSACTION_ERROR:
+		return "USB Transaction Error";
+	case COMP_TRB_ERROR:
+		return "TRB Error";
+	case COMP_STALL_ERROR:
+		return "Stall Error";
+	case COMP_RESOURCE_ERROR:
+		return "Resource Error";
+	case COMP_BANDWIDTH_ERROR:
+		return "Bandwidth Error";
+	case COMP_NO_SLOTS_AVAILABLE_ERROR:
+		return "No Slots Available Error";
+	case COMP_INVALID_STREAM_TYPE_ERROR:
+		return "Invalid Stream Type Error";
+	case COMP_SLOT_NOT_ENABLED_ERROR:
+		return "Slot Not Enabled Error";
+	case COMP_ENDPOINT_NOT_ENABLED_ERROR:
+		return "Endpoint Not Enabled Error";
+	case COMP_SHORT_PACKET:
+		return "Short Packet";
+	case COMP_RING_UNDERRUN:
+		return "Ring Underrun";
+	case COMP_RING_OVERRUN:
+		return "Ring Overrun";
+	case COMP_VF_EVENT_RING_FULL_ERROR:
+		return "VF Event Ring Full Error";
+	case COMP_PARAMETER_ERROR:
+		return "Parameter Error";
+	case COMP_BANDWIDTH_OVERRUN_ERROR:
+		return "Bandwidth Overrun Error";
+	case COMP_CONTEXT_STATE_ERROR:
+		return "Context State Error";
+	case COMP_NO_PING_RESPONSE_ERROR:
+		return "No Ping Response Error";
+	case COMP_EVENT_RING_FULL_ERROR:
+		return "Event Ring Full Error";
+	case COMP_INCOMPATIBLE_DEVICE_ERROR:
+		return "Incompatible Device Error";
+	case COMP_MISSED_SERVICE_ERROR:
+		return "Missed Service Error";
+	case COMP_COMMAND_RING_STOPPED:
+		return "Command Ring Stopped";
+	case COMP_COMMAND_ABORTED:
+		return "Command Aborted";
+	case COMP_STOPPED:
+		return "Stopped";
+	case COMP_STOPPED_LENGTH_INVALID:
+		return "Stopped - Length Invalid";
+	case COMP_STOPPED_SHORT_PACKET:
+		return "Stopped - Short Packet";
+	case COMP_MAX_EXIT_LATENCY_TOO_LARGE_ERROR:
+		return "Max Exit Latency Too Large Error";
+	case COMP_ISOCH_BUFFER_OVERRUN:
+		return "Isoch Buffer Overrun";
+	case COMP_EVENT_LOST_ERROR:
+		return "Event Lost Error";
+	case COMP_UNDEFINED_ERROR:
+		return "Undefined Error";
+	case COMP_INVALID_STREAM_ID_ERROR:
+		return "Invalid Stream ID Error";
+	case COMP_SECONDARY_BANDWIDTH_ERROR:
+		return "Secondary Bandwidth Error";
+	case COMP_SPLIT_TRANSACTION_ERROR:
+		return "Split Transaction Error";
+	default:
+		return "Unknown!!";
+	}
+}
+
+
+
+static inline const char *xhci_trb_type_string(u8 type)
+{
+	switch (type) {
+	case TRB_NORMAL:
+		return "Normal";
+	case TRB_SETUP:
+		return "Setup Stage";
+	case TRB_DATA:
+		return "Data Stage";
+	case TRB_STATUS:
+		return "Status Stage";
+	case TRB_ISOC:
+		return "Isoch";
+	case TRB_LINK:
+		return "Link";
+	case TRB_EVENT_DATA:
+		return "Event Data";
+	case TRB_TR_NOOP:
+		return "No-Op";
+	case TRB_ENABLE_SLOT:
+		return "Enable Slot Command";
+	case TRB_DISABLE_SLOT:
+		return "Disable Slot Command";
+	case TRB_ADDR_DEV:
+		return "Address Device Command";
+	case TRB_CONFIG_EP:
+		return "Configure Endpoint Command";
+	case TRB_EVAL_CONTEXT:
+		return "Evaluate Context Command";
+	case TRB_RESET_EP:
+		return "Reset Endpoint Command";
+	case TRB_STOP_RING:
+		return "Stop Ring Command";
+	case TRB_SET_DEQ:
+		return "Set TR Dequeue Pointer Command";
+	case TRB_RESET_DEV:
+		return "Reset Device Command";
+	case TRB_FORCE_EVENT:
+		return "Force Event Command";
+	case TRB_NEG_BANDWIDTH:
+		return "Negotiate Bandwidth Command";
+	case TRB_SET_LT:
+		return "Set Latency Tolerance Value Command";
+	case TRB_GET_BW:
+		return "Get Port Bandwidth Command";
+	case TRB_FORCE_HEADER:
+		return "Force Header Command";
+	case TRB_CMD_NOOP:
+		return "No-Op Command";
+	case TRB_TRANSFER:
+		return "Transfer Event";
+	case TRB_COMPLETION:
+		return "Command Completion Event";
+	case TRB_PORT_STATUS:
+		return "Port Status Change Event";
+	case TRB_BANDWIDTH_EVENT:
+		return "Bandwidth Request Event";
+	case TRB_DOORBELL:
+		return "Doorbell Event";
+	case TRB_HC_EVENT:
+		return "Host Controller Event";
+	case TRB_DEV_NOTE:
+		return "Device Notification Event";
+	case TRB_MFINDEX_WRAP:
+		return "MFINDEX Wrap Event";
+	case TRB_NEC_CMD_COMP:
+		return "NEC Command Completion Event";
+	case TRB_NEC_GET_FW:
+		return "NET Get Firmware Revision Command";
+	default:
+		return "UNKNOWN";
+	}
+}
+
+
+static inline const char *xhci_decode_trb(char *str, size_t size,
+					  u32 field0, u32 field1, u32 field2, u32 field3)
+{
+	int type = TRB_FIELD_TO_TYPE(field3);
+
+	switch (type) {
+	case TRB_LINK:
+		snprintf(str, size,
+			"LINK %08x%08x intr %d type '%s' flags %c:%c:%c:%c",
+			field1, field0, GET_INTR_TARGET(field2),
+			xhci_trb_type_string(type),
+			field3 & TRB_IOC ? 'I' : 'i',
+			field3 & TRB_CHAIN ? 'C' : 'c',
+			field3 & TRB_TC ? 'T' : 't',
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_TRANSFER:
+	case TRB_COMPLETION:
+	case TRB_PORT_STATUS:
+	case TRB_BANDWIDTH_EVENT:
+	case TRB_DOORBELL:
+	case TRB_HC_EVENT:
+	case TRB_DEV_NOTE:
+	case TRB_MFINDEX_WRAP:
+		snprintf(str, size,
+			"TRB %08x%08x status '%s' len %d slot %d ep %d type '%s' flags %c:%c",
+			field1, field0,
+			xhci_trb_comp_code_string(GET_COMP_CODE(field2)),
+			EVENT_TRB_LEN(field2), TRB_TO_SLOT_ID(field3),
+			TRB_TO_EP_ID(field3),
+			xhci_trb_type_string(type),
+			field3 & EVENT_DATA ? 'E' : 'e',
+			field3 & TRB_CYCLE ? 'C' : 'c');
+
+		break;
+	case TRB_SETUP:
+		snprintf(str, size,
+			"bRequestType %02x bRequest %02x wValue %02x%02x wIndex %02x%02x wLength %d length %d TD size %d intr %d type '%s' flags %c:%c:%c",
+				field0 & 0xff,
+				(field0 & 0xff00) >> 8,
+				(field0 & 0xff000000) >> 24,
+				(field0 & 0xff0000) >> 16,
+				(field1 & 0xff00) >> 8,
+				field1 & 0xff,
+				(field1 & 0xff000000) >> 16 |
+				(field1 & 0xff0000) >> 16,
+				TRB_LEN(field2), GET_TD_SIZE(field2),
+				GET_INTR_TARGET(field2),
+				xhci_trb_type_string(type),
+				field3 & TRB_IDT ? 'I' : 'i',
+				field3 & TRB_IOC ? 'I' : 'i',
+				field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_DATA:
+		snprintf(str, size,
+			 "Buffer %08x%08x length %d TD size %d intr %d type '%s' flags %c:%c:%c:%c:%c:%c:%c",
+				field1, field0, TRB_LEN(field2), GET_TD_SIZE(field2),
+				GET_INTR_TARGET(field2),
+				xhci_trb_type_string(type),
+				field3 & TRB_IDT ? 'I' : 'i',
+				field3 & TRB_IOC ? 'I' : 'i',
+				field3 & TRB_CHAIN ? 'C' : 'c',
+				field3 & TRB_NO_SNOOP ? 'S' : 's',
+				field3 & TRB_ISP ? 'I' : 'i',
+				field3 & TRB_ENT ? 'E' : 'e',
+				field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_STATUS:
+		snprintf(str, size,
+			 "Buffer %08x%08x length %d TD size %d intr %d type '%s' flags %c:%c:%c:%c",
+				field1, field0, TRB_LEN(field2), GET_TD_SIZE(field2),
+				GET_INTR_TARGET(field2),
+				xhci_trb_type_string(type),
+				field3 & TRB_IOC ? 'I' : 'i',
+				field3 & TRB_CHAIN ? 'C' : 'c',
+				field3 & TRB_ENT ? 'E' : 'e',
+				field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_NORMAL:
+	case TRB_ISOC:
+	case TRB_EVENT_DATA:
+	case TRB_TR_NOOP:
+		snprintf(str, size,
+			"Buffer %08x%08x length %d TD size %d intr %d type '%s' flags %c:%c:%c:%c:%c:%c:%c:%c",
+			field1, field0, TRB_LEN(field2), GET_TD_SIZE(field2),
+			GET_INTR_TARGET(field2),
+			xhci_trb_type_string(type),
+			field3 & TRB_BEI ? 'B' : 'b',
+			field3 & TRB_IDT ? 'I' : 'i',
+			field3 & TRB_IOC ? 'I' : 'i',
+			field3 & TRB_CHAIN ? 'C' : 'c',
+			field3 & TRB_NO_SNOOP ? 'S' : 's',
+			field3 & TRB_ISP ? 'I' : 'i',
+			field3 & TRB_ENT ? 'E' : 'e',
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+
+	case TRB_CMD_NOOP:
+	case TRB_ENABLE_SLOT:
+		snprintf(str, size,
+			"%s: flags %c",
+			xhci_trb_type_string(type),
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_DISABLE_SLOT:
+	case TRB_NEG_BANDWIDTH:
+		snprintf(str, size,
+			"%s: slot %d flags %c",
+			xhci_trb_type_string(type),
+			TRB_TO_SLOT_ID(field3),
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_ADDR_DEV:
+		snprintf(str, size,
+			"%s: ctx %08x%08x slot %d flags %c:%c",
+			xhci_trb_type_string(type),
+			field1, field0,
+			TRB_TO_SLOT_ID(field3),
+			field3 & TRB_BSR ? 'B' : 'b',
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_CONFIG_EP:
+		snprintf(str, size,
+			"%s: ctx %08x%08x slot %d flags %c:%c",
+			xhci_trb_type_string(type),
+			field1, field0,
+			TRB_TO_SLOT_ID(field3),
+			field3 & TRB_DC ? 'D' : 'd',
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_EVAL_CONTEXT:
+		snprintf(str, size,
+			"%s: ctx %08x%08x slot %d flags %c",
+			xhci_trb_type_string(type),
+			field1, field0,
+			TRB_TO_SLOT_ID(field3),
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_RESET_EP:
+		snprintf(str, size,
+			"%s: ctx %08x%08x slot %d ep %d flags %c:%c",
+			xhci_trb_type_string(type),
+			field1, field0,
+			TRB_TO_SLOT_ID(field3),
+			TRB_TO_EP_ID(field3),
+			field3 & TRB_TSP ? 'T' : 't',
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_STOP_RING:
+		snprintf(str, size,
+			"%s: slot %d sp %d ep %d flags %c",
+			xhci_trb_type_string(type),
+			TRB_TO_SLOT_ID(field3),
+			TRB_TO_SUSPEND_PORT(field3),
+			TRB_TO_EP_ID(field3),
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_SET_DEQ:
+		snprintf(str, size,
+			"%s: deq %08x%08x stream %d slot %d ep %d flags %c",
+			xhci_trb_type_string(type),
+			field1, field0,
+			TRB_TO_STREAM_ID(field2),
+			TRB_TO_SLOT_ID(field3),
+			TRB_TO_EP_ID(field3),
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_RESET_DEV:
+		snprintf(str, size,
+			"%s: slot %d flags %c",
+			xhci_trb_type_string(type),
+			TRB_TO_SLOT_ID(field3),
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_FORCE_EVENT:
+		snprintf(str, size,
+			"%s: event %08x%08x vf intr %d vf id %d flags %c",
+			xhci_trb_type_string(type),
+			field1, field0,
+			TRB_TO_VF_INTR_TARGET(field2),
+			TRB_TO_VF_ID(field3),
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_SET_LT:
+		snprintf(str, size,
+			"%s: belt %d flags %c",
+			xhci_trb_type_string(type),
+			TRB_TO_BELT(field3),
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_GET_BW:
+		snprintf(str, size,
+			"%s: ctx %08x%08x slot %d speed %d flags %c",
+			xhci_trb_type_string(type),
+			field1, field0,
+			TRB_TO_SLOT_ID(field3),
+			TRB_TO_DEV_SPEED(field3),
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	case TRB_FORCE_HEADER:
+		snprintf(str, size,
+			"%s: info %08x%08x%08x pkt type %d roothub port %d flags %c",
+			xhci_trb_type_string(type),
+			field2, field1, field0 & 0xffffffe0,
+			TRB_TO_PACKET_TYPE(field0),
+			TRB_TO_ROOTHUB_PORT(field3),
+			field3 & TRB_CYCLE ? 'C' : 'c');
+		break;
+	default:
+		snprintf(str, size,
+			"type '%s' -> raw %08x %08x %08x %08x",
+			xhci_trb_type_string(type),
+			field0, field1, field2, field3);
+	}
+
+	return str;
+}
+
+#define TT_SLOT (0xff)
+#define TT_PORT (0xff << 8)
+#define DEVINFO_TO_MAX_PORTS(p)	(((p) & (0xff << 24)) >> 24)
+#define GET_TT_THINK_TIME(p)	(((p) & (0x3 << 16)) >> 16)
+
+static inline char *xhci_slot_state_string(u32 state)
+{
+	switch (state) {
+	case SLOT_STATE_ENABLED:
+		return "enabled/disabled";
+	case SLOT_STATE_DEFAULT:
+		return "default";
+	case SLOT_STATE_ADDRESSED:
+		return "addressed";
+	case SLOT_STATE_CONFIGURED:
+		return "configured";
+	default:
+		return "reserved";
+	}
+}
+
+
+static inline const char *xhci_decode_slot_context(char *str,
+		u32 info, u32 info2, u32 tt_info, u32 state)
+{
+	u32 speed;
+	u32 hub;
+	u32 mtt;
+	int ret = 0;
+
+	speed = info & DEV_SPEED;
+	hub = info & DEV_HUB;
+	mtt = info & DEV_MTT;
+
+	ret = sprintf(str, "RS %05x %s%s%s Ctx Entries %d MEL %d us Port# %d/%d",
+			info & ROUTE_STRING_MASK,
+			({ char *s;
+			switch (speed) {
+			case SLOT_SPEED_FS:
+				s = "full-speed";
+				break;
+			case SLOT_SPEED_LS:
+				s = "low-speed";
+				break;
+			case SLOT_SPEED_HS:
+				s = "high-speed";
+				break;
+			case SLOT_SPEED_SS:
+				s = "super-speed";
+				break;
+			case SLOT_SPEED_SSP:
+				s = "super-speed plus";
+				break;
+			default:
+				s = "UNKNOWN speed";
+			} s; }),
+			mtt ? " multi-TT" : "",
+			hub ? " Hub" : "",
+			(info & LAST_CTX_MASK) >> 27,
+			info2 & MAX_EXIT,
+			DEVINFO_TO_ROOT_HUB_PORT(info2),
+			DEVINFO_TO_MAX_PORTS(info2));
+
+	ret += sprintf(str + ret, " [TT Slot %d Port# %d TTT %d Intr %d] Addr %d State %s",
+			tt_info & TT_SLOT, (tt_info & TT_PORT) >> 8,
+			GET_TT_THINK_TIME(tt_info), GET_INTR_TARGET(tt_info),
+			state & DEV_ADDR_MASK,
+			xhci_slot_state_string(GET_SLOT_STATE(state)));
+
+	return str;
+}
+
+
+static inline const char *xhci_ep_state_string(u8 state)
+{
+	switch (state) {
+	case EP_STATE_DISABLED:
+		return "disabled";
+	case EP_STATE_RUNNING:
+		return "running";
+	case EP_STATE_HALTED:
+		return "halted";
+	case EP_STATE_STOPPED:
+		return "stopped";
+	case EP_STATE_ERROR:
+		return "error";
+	default:
+		return "INVALID";
+	}
+}
+
+static inline const char *xhci_ep_type_string(u8 type)
+{
+	switch (type) {
+	case ISOC_OUT_EP:
+		return "Isoc OUT";
+	case BULK_OUT_EP:
+		return "Bulk OUT";
+	case INT_OUT_EP:
+		return "Int OUT";
+	case CTRL_EP:
+		return "Ctrl";
+	case ISOC_IN_EP:
+		return "Isoc IN";
+	case BULK_IN_EP:
+		return "Bulk IN";
+	case INT_IN_EP:
+		return "Int IN";
+	default:
+		return "INVALID";
+	}
+}
+
+
+#define CTX_TO_MAX_ESIT_PAYLOAD_HI(p)	(((p) >> 24) & 0xff)
+#define EP_MAXPSTREAMS_MASK		(0x1f << 10)
+#define EP_MAXPSTREAMS(p)		(((p) << 10) & EP_MAXPSTREAMS_MASK)
+#define CTX_TO_EP_MAXPSTREAMS(p)	(((p) & EP_MAXPSTREAMS_MASK) >> 10)
+
+static inline const char *xhci_decode_ep_context(char *str, u32 info,
+		u32 info2, u64 deq, u32 tx_info)
+{
+	int ret;
+
+	u32 esit;
+	u16 maxp;
+	u16 avg;
+
+	u8 max_pstr;
+	u8 ep_state;
+	u8 interval;
+	u8 ep_type;
+	u8 burst;
+	u8 cerr;
+	u8 mult;
+
+	bool lsa;
+	bool hid;
+
+	esit = CTX_TO_MAX_ESIT_PAYLOAD_HI(info) << 16 |
+		CTX_TO_MAX_ESIT_PAYLOAD(tx_info);
+
+	ep_state = info & EP_STATE_MASK;
+	max_pstr = CTX_TO_EP_MAXPSTREAMS(info);
+	interval = CTX_TO_EP_INTERVAL(info);
+	mult = CTX_TO_EP_MULT(info) + 1;
+	lsa = !!(info & EP_HAS_LSA);
+
+	cerr = (info2 & (3 << 1)) >> 1;
+	ep_type = CTX_TO_EP_TYPE(info2);
+	hid = !!(info2 & (1 << 7));
+	burst = CTX_TO_MAX_BURST(info2);
+	maxp = MAX_PACKET_DECODED(info2);
+
+	avg = EP_AVG_TRB_LENGTH(tx_info);
+
+	ret = sprintf(str, "State %s mult %d max P. Streams %d %s",
+			xhci_ep_state_string(ep_state), mult,
+			max_pstr, lsa ? "LSA " : "");
+
+	ret += sprintf(str + ret, "interval %d us max ESIT payload %d CErr %d ",
+			(1 << interval) * 125, esit, cerr);
+
+	ret += sprintf(str + ret, "Type %s %sburst %d maxp %d deq %016llx ",
+			xhci_ep_type_string(ep_type), hid ? "HID" : "",
+			burst, maxp, deq);
+
+	ret += sprintf(str + ret, "avg trb len %d", avg);
+
+	return str;
+}
+
+// static inline const char *xhci_decode_ctrl_ctx(char *str,
+// 		unsigned long drop, unsigned long add)
+// {
+// 	unsigned int	bit;
+// 	int		ret = 0;
+
+// 	str[0] = '\0';
+
+// 	if (drop) {
+// 		ret = sprintf(str, "Drop:");
+// 		for_each_set_bit(bit, &drop, 32)
+// 			ret += sprintf(str + ret, " %d%s",
+// 				       bit / 2,
+// 				       bit % 2 ? "in":"out");
+// 		ret += sprintf(str + ret, ", ");
+// 	}
+
+// 	if (add) {
+// 		ret += sprintf(str + ret, "Add:%s%s",
+// 			       (add & SLOT_FLAG) ? " slot":"",
+// 			       (add & EP0_FLAG) ? " ep0":"");
+// 		add &= ~(SLOT_FLAG | EP0_FLAG);
+// 		for_each_set_bit(bit, &add, 32)
+// 			ret += sprintf(str + ret, " %d%s",
+// 				       bit / 2,
+// 				       bit % 2 ? "in":"out");
+// 	}
+// 	return str;
+// }
+
+
+static void print_xhci_trb(union xhci_trb* trb){
+	return;
+	char trb_str[XHCI_MSG_MAX];
+	ZF_LOGE("%s",xhci_decode_trb(trb_str, XHCI_MSG_MAX,
+					   le32_to_cpu(trb->generic.field[0]),
+					   le32_to_cpu(trb->generic.field[1]),
+					   le32_to_cpu(trb->generic.field[2]),
+					   le32_to_cpu(trb->generic.field[3])));
+	// ZF_LOGE("%s", trb_str);
+}
+
+static void print_slot_ctx(struct xhci_slot_ctx* slot_ctx)
+{
+	return;
+	char slot_str[XHCI_MSG_MAX];
+	ZF_LOGE("%s", xhci_decode_slot_context(slot_str,
+		slot_ctx->dev_info,
+		slot_ctx->dev_info2,
+		slot_ctx->tt_info,
+		slot_ctx->dev_state));
+}
+
+static void print_endpoint_ctx(struct xhci_ep_ctx* ep_ctx){
+	return;
+	char ep_str[XHCI_MSG_MAX];
+	ZF_LOGE("%s", xhci_decode_ep_context(ep_str,
+		ep_ctx->ep_info,
+		ep_ctx->ep_info2,
+		ep_ctx->deq,
+		ep_ctx->tx_info
+	));
+}
 
 
 #endif /*_XHCI_XHCI_H_*/

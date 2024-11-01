@@ -11,9 +11,9 @@
 
 /* USB mouse */
 struct mouse_event {
-	uint8_t button;
-	uint8_t x;
-	uint8_t y;
+	uint8_t button; // 1 byte for button presses
+	uint8_t x; // 1 byte for X coordinates
+	uint8_t y; // 1 byte for Y coordinates
 } __attribute__((packed));
 
 int usb_mouse_driver_bind(usb_dev_t *usb_dev, struct ps_chardevice *cdev);

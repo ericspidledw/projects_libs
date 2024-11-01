@@ -16,12 +16,12 @@
 #include "../services.h"
 #include "hid.h"
 
-struct usb_mouse_device {
-	struct usb_dev *udev;
-	struct usb_hid_device *hid;
-	struct endpoint *ep_int;
-	struct xact int_xact;
-	struct mouse_event event;
+struct usb_mouse_device { // mouse device consists of...
+	struct usb_dev *udev; // our generic usb_dev struct (populates eps and such)
+	struct usb_hid_device *hid; // a hiddevice struct
+	struct endpoint *ep_int; // the interrupt endpoint we poll
+	struct xact int_xact; // the interrupt transaction (we can reuse just one after we extract the data)
+	struct mouse_event event; // a MOUSE event that consists of (button, x and y probably)
 };
 
 static ssize_t mouse_read(ps_chardevice_t* d, void* vdata, size_t bytes,
@@ -33,6 +33,7 @@ static ssize_t mouse_read(ps_chardevice_t* d, void* vdata, size_t bytes,
 
 	size = sizeof(struct mouse_event);
 	if (size > bytes) {
+		ZF_LOGE("Requesting too much data from a mouse device");
 		return 0;
 	}
 

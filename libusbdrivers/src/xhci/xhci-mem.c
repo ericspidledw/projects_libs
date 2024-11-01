@@ -519,8 +519,6 @@ int xhci_alloc_virt_device(struct xhci_ctrl *ctrl, unsigned int slot_id)
 	// ZF_LOGE("putting %p in the dev context pointers", byte_64);
 	ctrl->dcbaa->dev_context_ptrs[slot_id] = cpu_to_le64(byte_64);
 
-	// xhci_flush_cache((uintptr_t)&ctrl->dcbaa->dev_context_ptrs[slot_id],
-	// 		 sizeof(__le64));
 	return 0;
 }
 
@@ -688,9 +686,10 @@ struct xhci_ep_ctx *xhci_get_ep_ctx(struct xhci_ctrl *ctrl,
 				    unsigned int ep_index)
 {
 	/* increment ep index by offset of start of ep ctx array */
-	ep_index++; // indeex is 1
-	if (ctx->type == XHCI_CTX_TYPE_INPUT)
+	ep_index++;
+	if (ctx->type == XHCI_CTX_TYPE_INPUT){
 		ep_index++;
+	}
 
 	return (struct xhci_ep_ctx *)
 		(ctx->bytes +
@@ -747,6 +746,12 @@ void xhci_slot_copy(struct xhci_ctrl *ctrl, struct xhci_container_ctx *in_ctx,
 	in_slot_ctx = xhci_get_slot_ctx(ctrl, in_ctx);
 	out_slot_ctx = xhci_get_slot_ctx(ctrl, out_ctx);
 
+	ZF_LOGE("IN slot context");
+	print_slot_ctx(in_slot_ctx);
+	ZF_LOGE("becomes this OUT slot context");
+	print_slot_ctx(out_slot_ctx);
+
+
 	in_slot_ctx->dev_info = out_slot_ctx->dev_info;
 	in_slot_ctx->dev_info2 = out_slot_ctx->dev_info2;
 	in_slot_ctx->tt_info = out_slot_ctx->tt_info;
@@ -754,22 +759,6 @@ void xhci_slot_copy(struct xhci_ctrl *ctrl, struct xhci_container_ctx *in_ctx,
 }
 
 
-
-static void print_ep_ctx(struct xhci_ep_ctx* ctx){
-	printf("ep ctx info 0x%lx\n",ctx->ep_info);
-	printf("ep ctx info2 0x%lx \n",ctx->ep_info2);
-	printf("ep ctx 0x%llx\n", ctx->deq);
-	printf("ep ctx 0x%lx\n", ctx->tx_info);
-
-}
-
-static void print_slot_ctx(struct xhci_slot_ctx* ctx){
-	printf("slot ctx dev info 0x%lx\n", ctx->dev_info);
-	printf("slot ctx dev info2 0x%lx\n", ctx->dev_info2);
-	printf("slot ctx tt info 0x%lx\n", ctx->tt_info);
-	printf("slot ctx dev_state0x%lx\n", ctx->dev_state);
-
-}
 
 // /**
 //  * Setup an xHCI virtual device for a Set Address command
@@ -823,18 +812,19 @@ void xhci_setup_addressable_virt_dev(struct xhci_ctrl *ctrl,
 
 	// ZF_LOGE("route string %x\n", route);
 	slot_ctx->dev_info |= cpu_to_le32(route);
+	ZF_LOGE("Speed here is %d", speed);
 
 	switch (speed) {
-	case 0:
+	case USB_SPEED_SUPER:
 		slot_ctx->dev_info |= cpu_to_le32(SLOT_SPEED_SS);
 		break;
-	case 1:
+	case USB_SPEED_HIGH:
 		slot_ctx->dev_info |= cpu_to_le32(SLOT_SPEED_HS);
 		break;
-	case 2:
+	case USB_SPEED_FULL:
 		slot_ctx->dev_info |= cpu_to_le32(SLOT_SPEED_FS);
 		break;
-	case 3:
+	case USB_SPEED_LOW:
 		slot_ctx->dev_info |= cpu_to_le32(SLOT_SPEED_LS);
 		break;
 	default:
@@ -910,7 +900,8 @@ void xhci_setup_addressable_virt_dev(struct xhci_ctrl *ctrl,
 
 	/* Steps 7 and 8 were done in xhci_alloc_virt_device() */
 
-	print_ep_ctx(ep0_ctx);
+	ZF_LOGE("Dump ctrl context and print slot context");
+	print_endpoint_ctx(ep0_ctx);
 	print_slot_ctx(slot_ctx);
 	// xhci_flush_cache((uintptr_t)ep0_ctx, sizeof(struct xhci_ep_ctx));
 	// xhci_flush_cache((uintptr_t)slot_ctx, sizeof(struct xhci_slot_ctx));

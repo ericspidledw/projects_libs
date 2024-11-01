@@ -97,6 +97,12 @@ struct usb_dev {
     struct usb_dev      *next;
 };
 
+
+struct token_struct {
+    struct usb_device* driver_device;
+    void* token_val;
+};
+
 /*
  * USB requests
  */

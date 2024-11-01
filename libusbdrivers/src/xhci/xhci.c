@@ -187,7 +187,7 @@ static int xhci_start(struct xhci_hcor *hcor)
 	puts("Starting the controller\n");
 	// ZF_LOGE("Read the reg here");
 	temp = xhci_readl(&hcor->or_usbcmd);
-	temp |= (CMD_RUN) | (1 << 2);
+	temp |= (CMD_RUN) | (1 << 2); // enable IRQs for xHC
 	// ZF_LOGE("Usb cmd is at addr %p", &hcor->or_usbcmd);
 	xhci_writel(&hcor->or_usbcmd, temp);
 
@@ -475,12 +475,20 @@ static int xhci_configure_endpoints(struct usb_device *udev, bool ctx_change)
 	virt_dev = ctrl->devs[udev->slot_id];
 	in_ctx = virt_dev->in_ctx;
 
+	ZF_LOGE("ENDPOINT CONFIG DUMPS.........");
+	ZF_LOGE("DMA addr is %p", in_ctx->dma);
+	print_slot_ctx(xhci_get_slot_ctx(ctrl, in_ctx));
+	print_endpoint_ctx(xhci_get_ep_ctx(ctrl, in_ctx, 2));
+
 	// xhci_flush_cache((uintptr_t)in_ctx->bytes, in_ctx->size);
 	xhci_queue_command(ctrl, in_ctx->dma, udev->slot_id, 0,
 			   ctx_change ? TRB_EVAL_CONTEXT : TRB_CONFIG_EP);
 	event = xhci_wait_for_event(ctrl, TRB_COMPLETION);
 	if (!event)
 		return -ETIMEDOUT;
+
+	ZF_LOGE("TRB decode of config EP cmd");
+	print_xhci_trb(event);
 
 	switch (GET_COMP_CODE(le32_to_cpu(event->event_cmd.status))) {
 	case COMP_SUCCESS:
@@ -497,6 +505,28 @@ static int xhci_configure_endpoints(struct usb_device *udev, bool ctx_change)
 	xhci_acknowledge_event(ctrl);
 
 	return 0;
+}
+
+
+
+static void dump_ep_ctx(int index, struct xhci_ep_ctx* ep_ctx)
+{
+	// printf("----------- Dump endpoint %d ctx ---------\n", index);
+	print_endpoint_ctx(ep_ctx);
+}
+
+
+static void dump_endpoint_desc(struct usb_endpoint_descriptor* desc)
+{
+	return;
+	printf("----------- Dump endpoint desc ---------\n");
+	printf("len is %d\n", desc->bLength);
+	printf("desc type is %d\n", desc->bDescriptorType);
+	printf("endpoint addr is %d\n", desc->bEndpointAddress);
+	printf("attrs is %d\n", desc->bmAttributes);
+	printf("wMaxPacketSize is %d\n", desc->wMaxPacketSize);
+	printf("Interval is %d\n", desc->bInterval);
+	printf("-----------  DONE endpoint desc ---------\n");
 }
 
 // /**
@@ -538,7 +568,9 @@ static int xhci_set_configuration(struct usb_device *udev)
 	ifdesc = &udev->config.if_desc[0];
 
 	ZF_LOGD("SET CONFIG: get input control ctx");
+	ZF_LOGE("set config check control ctx");
 	ctrl_ctx = xhci_get_input_control_ctx(in_ctx);
+	print_input_ctrl_context(ctrl_ctx);
 	/* Initialize the input context control */
 	ctrl_ctx->add_flags = cpu_to_le32(SLOT_FLAG);
 	ctrl_ctx->drop_flags = 0;
@@ -557,7 +589,7 @@ static int xhci_set_configuration(struct usb_device *udev)
 
 	// xhci_inval_cache((uintptr_t)out_ctx->bytes, out_ctx->size);
 
-	ZF_LOGE("SET CONFIG: slot context");
+	// ZF_LOGE("SET CONFIG: slot context");
 	/* slot context */
 	xhci_slot_copy(ctrl, in_ctx, out_ctx);
 	slot_ctx = xhci_get_slot_ctx(ctrl, in_ctx);
@@ -566,10 +598,9 @@ static int xhci_set_configuration(struct usb_device *udev)
 
 	xhci_endpoint_copy(ctrl, in_ctx, out_ctx, 0);
 
-	ZF_LOGE("SET CONFIG: fill up ep contexts");
+	// ZF_LOGE("SET CONFIG: fill up ep contexts");
 	/* filling up ep contexts */
 	for (cur_ep = 0; cur_ep < num_of_ep; cur_ep++) {
-		ZF_LOGE("SET CONFIG: ep context is %d", cur_ep);
 		struct usb_endpoint_descriptor *endpt_desc = NULL;
 		struct usb_ss_ep_comp_descriptor *ss_ep_comp_desc = NULL;
 
@@ -584,6 +615,7 @@ static int xhci_set_configuration(struct usb_device *udev)
 		 * size. For Isoc and Int, set it to max available.
 		 * See xHCI 1.1 spec 4.14.1.1 for details.
 		 */
+
 		max_esit_payload = xhci_get_max_esit_payload(udev, endpt_desc,
 							     ss_ep_comp_desc);
 		interval = xhci_get_endpoint_interval(udev, endpt_desc);
@@ -594,8 +626,8 @@ static int xhci_set_configuration(struct usb_device *udev)
 		avg_trb_len = max_esit_payload;
 
 		ep_index = xhci_get_ep_index(endpt_desc);
-		// ZF_LOGE("ep index is %d", ep_index);
 		ep_ctx[ep_index] = xhci_get_ep_ctx(ctrl, in_ctx, ep_index);
+		ZF_LOGE("Ep_index is %d", ep_index);
 
 		/* Allocate the ep rings */
 		virt_dev->eps[ep_index].ring = xhci_ring_alloc(ctrl, 1, true);
@@ -604,9 +636,7 @@ static int xhci_set_configuration(struct usb_device *udev)
 
 		/*NOTE: ep_desc[0] actually represents EP1 and so on */
 		dir = (((endpt_desc->bEndpointAddress) & (0x80)) >> 7);
-		ZF_LOGD("dir is 0x%lx and addrs is 0x%lx", dir, endpt_desc->bEndpointAddress);
 		ep_type = (((endpt_desc->bmAttributes) & (0x3)) | (dir << 2));
-		ZF_LOGD("Ep type is 0x%lx and attrs is 0x%lx", ep_type, endpt_desc->bmAttributes);
 
 		ep_ctx[ep_index]->ep_info =
 			cpu_to_le32(EP_MAX_ESIT_PAYLOAD_HI(max_esit_payload) |
@@ -625,7 +655,7 @@ static int xhci_set_configuration(struct usb_device *udev)
 			ERROR_COUNT(err_count));
 
 		trb_64 = xhci_trb_virt_to_dma(virt_dev->eps[ep_index].ring->enq_seg,
-				virt_dev->eps[ep_index].ring->enqueue);
+				virt_dev->eps[ep_index].ring->enqueue); // why is this enq?
 		ep_ctx[ep_index]->deq = cpu_to_le64(trb_64 |
 				virt_dev->eps[ep_index].ring->cycle_state);
 
@@ -648,9 +678,19 @@ static int xhci_set_configuration(struct usb_device *udev)
 			ep_ctx[ep_index]->reserved[0] =
 				cpu_to_le32(EP_BPKTS(1) | EP_BBM(1));
 		}
+		dump_ep_ctx(ep_index, ep_ctx[ep_index]);
+
 	}
 
+	// ZF_LOGE("Dump IP ep contexts");
+	// for(int i =0; i < 8; i++)
+	// 	dump_ep_ctx(&ep_ctx[i]);
+
 	// ZF_LOGE("SET CONFIG: return the configure endpoints");
+
+	ZF_LOGE("---------bottom of set config before config eps----------");
+	print_slot_ctx(slot_ctx);
+	print_input_ctrl_context(ctrl_ctx);
 	return xhci_configure_endpoints(udev, false);
 }
 
@@ -732,6 +772,9 @@ static int xhci_address_device(struct usb_device *udev, int root_portnr)
 	// xhci_inval_cache((uintptr_t)virt_dev->out_ctx->bytes,
 			//  virt_dev->out_ctx->size);
 	slot_ctx = xhci_get_slot_ctx(ctrl, virt_dev->out_ctx);
+
+	ZF_LOGE("Slot context after address device cmd");
+	print_slot_ctx(slot_ctx);
 
 	// ZF_LOGE("xHC internal address is: %d\n",
 	// 	le32_to_cpu(slot_ctx->dev_state) & DEV_ADDR_MASK);
@@ -851,6 +894,8 @@ int xhci_check_maxpacket(struct usb_device *udev)
 		ctrl_ctx = xhci_get_input_control_ctx(in_ctx);
 		ctrl_ctx->add_flags = cpu_to_le32(EP0_FLAG);
 		ctrl_ctx->drop_flags = 0;
+		ZF_LOGE("dumping the control cxontext in check maxpacket");
+		print_input_ctrl_context(ctrl_ctx);
 
 		ret = xhci_configure_endpoints(udev, true);
 	}
@@ -1233,14 +1278,14 @@ static int _xhci_submit_control_msg(struct usb_device *udev, unsigned long pipe,
 	assert(ctrl);
 	int ret = 0;
 
-	if (usb_pipetype(pipe) != 2) { // check pipe is control  (it needs to be for this)
+	if (usb_pipetype(pipe) != PIPE_CONTROL) { // check pipe is control  (it needs to be for this)
 		printf("non-control pipe (type=%lu)", usb_pipetype(pipe));
 		return -EINVAL;
 	}
 
 	// ZF_LOGE("pipe device is %d and ctrl root dev is %d", usb_pipedevice(pipe), ctrl->rootdev);
 	if (usb_pipedevice(pipe) == ctrl->rootdev)
-	return xhci_submit_root(udev, pipe, buffer, setup);
+		return xhci_submit_root(udev, pipe, buffer, setup);
 
 	if (setup->request == USB_REQ_SET_ADDRESS &&
 	   (setup->requesttype & USB_TYPE_MASK) == USB_TYPE_STANDARD)
@@ -1385,7 +1430,7 @@ static int xhci_submit_int_msg(struct usb_device *udev,
 int xhci_alloc_device(struct udevice *dev, struct usb_device *udev)
 {
 	// ZF_LOGE("%s: dev='%s', udev=%p\n", __func__, dev->name, udev);
-	return _xhci_alloc_device(udev);
+	return _xhci_alloc_device(udev);\
 }
 
 // static int xhci_update_hub_device(struct udevice *dev, struct usb_device *udev)
@@ -1478,6 +1523,7 @@ static trb_type xhci_get_trb_type(union xhci_trb* trb){
 
 
 static void dump_interrupter(struct xhci_intr_reg* ir){
+	return;
 	printf("irq_pending is 0x%lx\n", ir->irq_pending); // IMAN
 	printf("irq_control is 0x%lx\n", ir->irq_control); // IMOD
 	printf("erst_size is 0x%lx\n", ir->erst_size);
@@ -1578,132 +1624,153 @@ struct usb_device {
 // };
 // */
 
+static void clear_irq(struct xhci_ctrl* ctrl)
+{
+	uint32_t usb_stat = xhci_readl(&ctrl->hcor->or_usbsts);
+	usb_stat |= (1 << 3);
+	xhci_writel(&ctrl->hcor->or_usbsts, usb_stat);
+	uint32_t irq_stat = xhci_readl(&ctrl->ir_set[0].irq_pending);
+	irq_stat |= 0x1; // clear IRQ
+	xhci_writel(&ctrl->ir_set[0].irq_pending, irq_stat); // clear irq
+}
+
+
+static int handle_port_change(struct xhci_ctrl* ctrl, union xhci_trb* trb, usb_host_t *hdev)
+{
+	int err = 0;
+	struct usb_device *usb_device = usb_malloc(sizeof(*usb_device));
+	assert(usb_device);
+	struct usb_dev *sel4_usb_dev = usb_malloc(sizeof(*sel4_usb_dev));
+	assert(sel4_usb_dev);
+
+	usb_device->ctrl = ctrl;
+	sel4_usb_dev->host = hdev;
+	int port_nr = ((trb->event_cmd.cmd_trb >> 24) & (0xff));
+	uint32_t port_status = ctrl->hcor->portregs[port_nr - 1].or_portsc;
+
+	if(port_status & (1 << 20)) {
+			ZF_LOGF("You've got an over current condtion check USB connection cable or port....");
+	}
+
+	if(port_status & PORT_CCS) {
+		// use the port to allocate the stuff
+		struct usb_device *udev;
+		if(!PORT_ENABLED(port_status)){
+			xhci_writel(&ctrl->hcor->portregs[port_nr - 1].or_portsc, port_status | (1 << 4));
+		}
+		while(!PORT_ENABLED(port_status) && PORT_POLLING(port_status)) // USB 2.0 controller
+		{
+			union xhci_trb* trb2 = xhci_wait_for_event(ctrl, TRB_PORT_STATUS);
+			xhci_acknowledge_event(ctrl);
+			port_status = ctrl->hcor->portregs[port_nr - 1].or_portsc;
+		}
+		err = xhci_alloc_device(NULL, usb_device);
+		if(err){
+			ZF_LOGF("Error allocting device for port %d", port_nr);
+		}
+		// ZF_LOGF("Device speed is %d", (port_status >> 10) & 0xf);
+		usb_device->devnum = port_nr;
+		uint8_t dev_speed = (port_status >> 10) & 0xf;
+		ZF_LOGE("Dev speed is %d", dev_speed);
+		switch(dev_speed) // 7.2.1 Protocol speed
+		{
+			case 1:
+				usb_device->speed = USB_SPEED_FULL;
+				break;
+			case 2:
+				usb_device->speed = USB_SPEED_LOW;
+				break;
+			case 3:
+				usb_device->speed = USB_SPEED_HIGH;
+				break;
+			case 4:
+				usb_device->speed = USB_SPEED_SUPER;
+				break;
+			case 5:
+				usb_device->speed = USB_SPEED_SUPER_PLUS;
+				break;
+			default:
+				ZF_LOGF("Unknown device speed %d", dev_speed);
+		}
+		return usb_new_device_with_host(NULL, hdev, port_nr, usb_device->speed, &sel4_usb_dev, usb_device); // EXTREME SUS
+	}
+	else {
+		ZF_LOGE("USB unplug event detected");
+		return 0;
+	}
+}
+
+
+static int handle_transfer_event(struct xhci_ctrl* ctrl, union xhci_trb* trb)
+{
+	ZF_LOGE("trb buff is %p", trb->trans_event.buffer);
+	ZF_LOGE("trb len is 0x%lx", trb->trans_event.transfer_len);
+	ZF_LOGE("trb flags are 0x%x", trb->trans_event.flags);
+	xhci_acknowledge_event(ctrl);
+	ZF_LOGE("Handle transfer event...?");
+	return 0;
+}
+
 static void xhci_handle_irq(usb_host_t *hdev) {
 
-	ZF_LOGE("USB handle the IRQ!!!");
+	// ZF_LOGE("USB handle the IRQ!!!");
 	struct xhci_ctrl* ctrl = hdev->ctrl;
 
-	dump_interrupter(ctrl->ir_set);
 
 	if(PORT_CHANGE_IRQ(ctrl->hcor->or_usbsts)){
 		uint32_t portsc = ctrl->hcor->portregs->or_portsc;
-		ZF_LOGE("PORT CHANGE DETECTED with value of 0x%x", portsc);
+		// ZF_LOGE("PORT CHANGE DETECTED with value of 0x%x", portsc);
 		for(int i = 0; i < MAX_HC_PORTS; i++){
 			uint32_t reg = ctrl->hcor->portregs[i].or_portsc;
-			ZF_LOGE("Reg %d is 0x%lx", i, reg);
+			// ZF_LOGE("Reg %d is 0x%lx", i, reg);
 		}
 	}
-
-	int event_loop = 0;
-	int err;
-	u64 temp;
-
-	// xhci_clear_interrupt_pending(ir); // do I need to clear? we'll check
 
 	/* Event ring hasn't been allocated yet. */
 	if (!ctrl->event_ring || !ctrl->event_ring->dequeue) {
-		ZF_LOGE("ERROR interrupter event ring has not been setup\n");
+		ZF_LOGF("ERROR Ctrl event ring has not been setup\n");
 		return;
 	}
 
-
-	// we'll check this eventually....
-	// if (xhci->xhc_state & XHCI_STATE_DYING ||
-	//     xhci->xhc_state & XHCI_STATE_HALTED) {
-	// 	xhci_dbg(xhci, "xHCI dying, ignoring interrupt. Shouldn't IRQs be disabled?\n");
-
-	// 	/* Clear the event handler busy flag (RW1C) */
-	// 	temp = xhci_read_64(xhci, &ir->ir_set->erst_dequeue);
-	// 	xhci_write_64(xhci, temp | ERST_EHB, &ir->ir_set->erst_dequeue);
-	// 	return -ENODEV;
-	// }
-
+	int err = 0;
 	/* Process all OS owned event TRBs on this event ring */
 	while (event_ready(ctrl)) { /// while we have an event...
-		trb_type transfer_type = xhci_get_trb_type(ctrl->event_ring->dequeue);
+		trb_type transfer_type = xhci_get_trb_type(ctrl->event_ring->dequeue); // grab dequeue pointer's event..
 
 		union xhci_trb* trb = xhci_wait_for_event(ctrl, transfer_type);
-		switch(transfer_type){
+		// ZF_LOGE("Trb type is %d", transfer_type);
+		switch(transfer_type) {
 			case TRB_PORT_STATUS: {
-			struct usb_device *usb_device = usb_malloc(sizeof(*usb_device));
-			struct usb_dev *sel4_usb_dev = usb_malloc(sizeof(*usb_device));
-			sel4_usb_dev->host = hdev;
-			int port_nr = ((trb->event_cmd.cmd_trb >> 24) & (0xff));
-			uint32_t port_status = ctrl->hcor->portregs[port_nr - 1].or_portsc;
-			// ZF_LOGE("port %d is the target and has  status 0x%lx", port_nr, port_status);
-
-			if(port_status & (1 << 20)){
-				ZF_LOGF("You've got an over current condtion check USB connection cable or port....");
-				// ZF_LOGE("Clearing the over current condition");
-				// xhci_writel(&ctrl->hcor->portregs[port_nr - 1].or_portsc, port_status | (1 << 20) | (1 << 9)); // clear overcurrent condition
-				// ZF_LOGE("After write the port status is %lx", ctrl->hcor->portregs[port_nr - 1].or_portsc);
-				// ZF_LOGE("HCC params is 0x%lx", ctrl->hccr->cr_hccparams);
-				// assert(ctrl->hcor->portregs[port_nr - 1].or_portsc & (1 << 20) == 0);
+				ZF_LOGD("Port Status event detected");
+				err = handle_port_change(ctrl, trb, hdev);
+				assert(!err);
+				break;
 			}
 
-			if(port_status & PORT_CCS){
-				// use the port to allocate the stuff
-				struct usb_device *udev;
-				if(!PORT_ENABLED(port_status)){
-					xhci_writel(&ctrl->hcor->portregs[port_nr - 1].or_portsc, port_status | (1 << 4));
-				}
-				while(!PORT_ENABLED(port_status) && PORT_POLLING(port_status)) // USB 2.0 controller
-				{
-					union xhci_trb* trb2 =xhci_wait_for_event(ctrl, TRB_PORT_STATUS);
-					xhci_acknowledge_event(ctrl);
-					port_status = ctrl->hcor->portregs[port_nr - 1].or_portsc;
-					// ZF_LOGE("Port status is now 0x%x and returned trb 0x%lx", port_status, trb2->event_cmd.cmd_trb);
-				}
-				usb_device->ctrl = ctrl;
-				int rc = xhci_alloc_device(NULL, usb_device);
-				if(rc){
-					ZF_LOGE("Error allocting device for port %d", port_nr);
-				}
-				usb_device->devnum = port_nr; // does this need to be -1?
-				usb_device->speed = 2;
-				// xhci_alloc_device()
-				usb_new_device_with_host(NULL, hdev, port_nr, 3, &sel4_usb_dev, usb_device);
+			case TRB_TRANSFER: {
+				ZF_LOGD("Transfer event detected");
+				err = handle_transfer_event(ctrl, trb);
+				assert(!err);
+				break;
 			}
-			else {
-				ZF_LOGE("USB unplug event detected");
-			}
-			// ZF_LOGE("We got a trb port status on port %d and status 0x%x", port_nr, port_status);
-			break;
+
+			case TRB_COMPLETION: {
+				ZF_LOGE("We got a trb completion event");
+				// xhci_acknowledge_event(ctrl);
+				break;
 			}
 
 			default:
-			ZF_LOGE("Unhandled TRB event for now");
+				ZF_LOGE("Unhandled TRB event %d for now", transfer_type);
+
+
 			break;
 		}
 
-		clear_irq: // currentlty assumes first interrupter is the one that is pending
-			ZF_LOGE("Clearing IRQ!!!!");
-			xhci_writel(&ctrl->ir_set[0].irq_pending, 0x1); // clear irq
-			ZF_LOGE("Cleared IRQ dumping interrupter");
-			dump_interrupter(ctrl->ir_set);
-		// err = xhci_handle_event_trb(xhci, ir, ir->event_ring->dequeue);
-
-		/*
-		 * If half a segment of events have been handled in one go then
-		 * update ERDP, and force isoc trbs to interrupt more often
-		 */
-		// if (event_loop++ > TRBS_PER_SEGMENT / 2) {
-		// 	xhci_update_erst_dequeue(xhci, ir, false);
-
-		// 	if (ir->isoc_bei_interval > AVOID_BEI_INTERVAL_MIN)
-		// 		ir->isoc_bei_interval = ir->isoc_bei_interval / 2;
-
-		// 	event_loop = 0;
-		// }
-
-		// /* Update SW event ring dequeue pointer */
-		// inc_deq(xhci, ir->event_ring);
-
-		// if (err)
-		// 	break;
 	}
 
-	// xhci_update_erst_dequeue(xhci, ir, true);
+	clear_irq(ctrl);
+	// ZF_LOGE("Leaving IRQ Handler");
 
 }
 
@@ -1726,33 +1793,40 @@ static int xhci_schedule_xact(usb_host_t *hdev, uint8_t addr, int8_t hub_addr,
 		       struct endpoint *ep, struct xact *xact, int nxact,
 		       usb_cb_t cb, void *t)
 {
+	struct token_struct* the_token = (struct token_struct*) t;
 	struct usb_device* dev = usb_malloc(sizeof(*dev));
 	void* xact_data = 0;
 	int data_len = 0;
-	if(t == NULL) {
+	int rc = 0;
+
+	if(the_token){
+		// ZF_LOGE("The token device driver is  %p", the_token->driver_device);
+		// ZF_LOGE("The token val  is  %p", the_token->token_val);
+	}
+	if(the_token->driver_device == NULL) {
+		// ZF_LOGE("No device passed through the token");
 		dev = hdev->drv_dev;
 	}
 	else {
-		dev = (struct usb_device*) t;
+		dev = the_token->driver_device;
+	// ZF_LOGE("set driver device to token provided dev %p", dev);
 	}
 
 	struct devrequest * req = NULL;
 
-	if(ep->type != EP_BULK)
+	if(ep->type == EP_CONTROL) // only control has a 'request' block
 		req = (struct devrequest *) xact[0].vaddr; // index 0 is the request
 	struct xhci_ctrl* ctrl = hdev->ctrl;
 	unsigned long pipe = 0;
 
-	// printf("We're inside of xact scheduling\n");
 	if(nxact > 1){
 		xact_data = (void*)xact[1].vaddr;
 		data_len = xact[1].len;
 	}
 
 	if(ep->type == EP_CONTROL){
-		// ZF_LOGE("CTL endpoint");
 		if(req->requesttype & USB_DIR_IN){
-			pipe = usb_rcvctrlpipe(dev, 0); // maybe should be usb_rcvctrlpipe not def ?
+			pipe = usb_rcvctrlpipe(dev, 0);
 		}
 		else{
 			pipe = usb_sndctrlpipe(dev, 0);
@@ -1760,31 +1834,28 @@ static int xhci_schedule_xact(usb_host_t *hdev, uint8_t addr, int8_t hub_addr,
 		return xhci_submit_control_msg(dev, pipe, (void*) xact_data, data_len, req);
 	}
 	else if(ep->type == EP_INTERRUPT){
-		// ZF_LOGE("IRQ EP TYPE");
-		assert(nxact <= 1);
-		xact_data = (void*) req;
-		data_len = sizeof(*req);
-		if(req->requesttype & USB_DIR_IN){
-			ZF_LOGE("IN IRQ ep num is %d", ep->num);
-			pipe = usb_rcvintpipe(dev, ep->num);
-		}
-		else{
-			ZF_LOGE("Out IRQ ep num is %d", ep->num);
-			pipe = usb_sndintpipe(dev, ep->num);
-		}
-		return xhci_submit_int_msg(dev, pipe, (void*) xact_data, data_len, 0, 0); // interval and non block seem to be unused...
-	}
-	else if(ep->type == EP_BULK){
-		// ZF_LOGE("BULK EP TYPE");
 		assert(nxact <= 1);
 		xact_data = (void*) xact->vaddr;
 		data_len = xact->len;
-		// ZF_LOGE("Bulk data size is %d", data_len);
 		if(xact->type == PID_IN){
-			pipe = usb_rcvbulkpipe(dev, ep->num); // do I need + 1? Who knows
+			// ZF_LOGE("IN IRQ ep num is %d", ep->num);
+			pipe = usb_rcvintpipe(dev, ep->num);
 		}
 		else{
-			pipe = usb_sndbulkpipe(dev, ep->num); // assuming out just for now
+			// ZF_LOGE("Out IRQ ep num is %d", ep->num);
+			pipe = usb_sndintpipe(dev, ep->num);
+		}
+		rc = xhci_submit_int_msg(dev, pipe, (void*) xact_data, data_len, 0, 0); // interval and non block seem to be unused...
+	}
+	else if(ep->type == EP_BULK){
+		assert(nxact <= 1);
+		xact_data = (void*) xact->vaddr;
+		data_len = xact->len;
+		if(xact->type == PID_IN){
+			pipe = usb_rcvbulkpipe(dev, ep->num);
+		}
+		else{
+			pipe = usb_sndbulkpipe(dev, ep->num);
 		}
 		return xhci_submit_bulk_msg(dev, pipe, (void*) xact_data, data_len); // interval and non block seem to be unused.
 	}
@@ -1792,14 +1863,12 @@ static int xhci_schedule_xact(usb_host_t *hdev, uint8_t addr, int8_t hub_addr,
 		ZF_LOGF("unsupported ep type %d", ep->type);
 	}
 
-	// xhci_submit_int_msg(dev, pipe, )
-	/*
-	 - udev --> usb device?
-	 - pipe --> type of ctrl we're using here
-	 - buffer --> where to write our data
-	 - length --> the legnth of data to write
-	 - setup --> the device request
-	*/
+	if(cb){
+		rc = cb(the_token->token_val, rc, 0x0); // for now assume no short packet transfer...
+	}
+
+	// free(dev);
+	return rc;
 
 }
 

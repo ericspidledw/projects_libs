@@ -177,7 +177,7 @@ static void inc_enq(struct xhci_ctrl *ctrl, struct xhci_ring *ring,
 //  * @param ring	Ring whose Dequeue TRB pointer needs to be incremented.
 //  * return none
 //  */
-static void inc_deq(struct xhci_ctrl *ctrl, struct xhci_ring *ring)
+void inc_deq(struct xhci_ctrl *ctrl, struct xhci_ring *ring)
 {
 	do {
 		/*
@@ -194,7 +194,9 @@ static void inc_deq(struct xhci_ctrl *ctrl, struct xhci_ring *ring)
 			ring->deq_seg = ring->deq_seg->next;
 			ring->dequeue = ring->deq_seg->trbs;
 		} else {
+			// ZF_LOGE("Deq before is %p", ring->dequeue);
 			ring->dequeue++;
+			// ZF_LOGE("Deq after is %p", ring->dequeue);
 		}
 	} while (last_trb(ctrl, ring, ring->deq_seg, ring->dequeue));
 }
@@ -222,12 +224,13 @@ static dma_addr_t queue_trb(struct xhci_ctrl *ctrl, struct xhci_ring *ring,
 
 	for (i = 0; i < 4; i++){
 		trb->field[i] = cpu_to_le32(trb_fields[i]);
-	// 	printf("trb %d is 0x%lx\n", i, trb->field[i]);
 	}
 
-	// xhci_flush_cache((uintptr_t)trb, sizeof(struct xhci_generic_trb));
+	// ZF_LOGE("Print TRB");
+	// print_xhci_trb(ring->enqueue);
 
 	addr = xhci_trb_virt_to_dma(ring->enq_seg, (union xhci_trb *)trb);
+
 
 	inc_enq(ctrl, ring, more_trbs_coming);
 
@@ -341,9 +344,7 @@ int xhci_queue_command(struct xhci_ctrl *ctrl, dma_addr_t addr, u32 slot_id,
 	queue_trb(ctrl, ctrl->cmd_ring, false, fields);
 
 	/* Ring the command ring doorbell */
-	// ZF_LOGE("XHCI write the doorbell");
 	xhci_writel(&ctrl->dba->doorbell[0], DB_VALUE_HOST);
-	// ZF_LOGE("Done writing to the doorbell");
 	return 0;
 }
 
@@ -395,6 +396,7 @@ static u32 xhci_td_remainder(struct xhci_ctrl *ctrl, int transferred,
 		trb_buff_len = 0;
 
 	total_packet_count = DIV_ROUND_UP(td_total_len, maxp);
+	ZF_LOGE("Total packet count is %d", total_packet_count);
 
 	/* Queueing functions don't count the current TRB into transferred */
 	return (total_packet_count - ((transferred + trb_buff_len) / maxp));
@@ -419,6 +421,7 @@ static void giveback_first_trb(struct usb_device *udev, int ep_index,
 	 * Pass all the TRBs to the hardware at once and make sure this write
 	 * isn't reordered.
 	 */
+	// ZF_LOGE("Start cycle is %d", start_cycle);
 	if (start_cycle)
 		start_trb->field[3] |= cpu_to_le32(start_cycle);
 	else
@@ -427,8 +430,11 @@ static void giveback_first_trb(struct usb_device *udev, int ep_index,
 	// xhci_flush_cache((uintptr_t)start_trb, sizeof(struct xhci_generic_trb));
 
 	/* Ringing EP doorbell here */
+	// ZF_LOGE("ep index in giveback is %d", ep_index);
 	xhci_writel(&ctrl->dba->doorbell[udev->slot_id],
 				DB_VALUE(ep_index, 0));
+
+	// ZF_LOGE("Wrote %d to the device in slot %d", DB_VALUE(ep_index, 0), udev->slot_id);
 
 	return;
 }
@@ -445,6 +451,7 @@ static void giveback_first_trb(struct usb_device *udev, int ep_index,
 //  */
 void xhci_acknowledge_event(struct xhci_ctrl *ctrl)
 {
+	// ZF_LOGE("Acking the event");
 	dma_addr_t deq;
 
 	/* Advance our dequeue pointer to the next event */
@@ -454,6 +461,7 @@ void xhci_acknowledge_event(struct xhci_ctrl *ctrl)
 	deq = xhci_trb_virt_to_dma(ctrl->event_ring->deq_seg,
 				   ctrl->event_ring->dequeue);
 	xhci_writeq(&ctrl->ir_set->erst_dequeue, deq | ERST_EHB);
+	// ZF_LOGE("Deq after write is %lp", xhci_readq(&ctrl->ir_set->erst_dequeue));
 }
 
 // /**
@@ -464,19 +472,21 @@ void xhci_acknowledge_event(struct xhci_ctrl *ctrl)
 //  */
 int event_ready(struct xhci_ctrl *ctrl)
 {
+	return ring_event_ready(ctrl->event_ring);
+}
+
+int ring_event_ready(struct xhci_ring* ring) {
 	union xhci_trb *event;
 
-	// xhci_inval_cache((uintptr_t)ctrl->event_ring->dequeue,
-	// 		 sizeof(union xhci_trb));
-
-	event = ctrl->event_ring->dequeue;
+	event = ring->dequeue;
 
 	/* Does the HC or OS own the TRB? */
 	if ((le32_to_cpu(event->event_cmd.flags) & TRB_CYCLE) !=
-		ctrl->event_ring->cycle_state)
-		return 0;
-
+		ring->cycle_state){
+			return 0;
+		}
 	return 1;
+
 }
 
 // /**
@@ -506,8 +516,18 @@ union xhci_trb *xhci_wait_for_event(struct xhci_ctrl *ctrl, trb_type expected)
 
 		type = TRB_FIELD_TO_TYPE(le32_to_cpu(event->event_cmd.flags));
 		if (type == expected ||
-		    (expected == TRB_NONE && type != TRB_PORT_STATUS))
+		    (expected == TRB_NONE && type != TRB_PORT_STATUS)) {
+			// ZF_LOGE("Got event that matched expected is %d", expected);
+			// printf("TRB is...  "
+			// 	"(%08x %08x %08x %08x) expected %d got %d\n",
+			// 	le32_to_cpu(event->generic.field[0]),
+			// 	le32_to_cpu(event->generic.field[1]),
+			// 	le32_to_cpu(event->generic.field[2]),
+			// 	le32_to_cpu(event->generic.field[3]),
+			// 	expected,
+			// 	type);
 			return event;
+			}
 
 		if (type == TRB_PORT_STATUS)
 		/* TODO: remove this once enumeration has been reworked */
@@ -520,12 +540,14 @@ union xhci_trb *xhci_wait_for_event(struct xhci_ctrl *ctrl, trb_type expected)
 			// 	le32_to_cpu(event->generic.field[2])) !=
 			// 					COMP_SUCCESS);
 		else
-			printf("Unexpected XHCI event TRB, skipping... "
-				"(%08x %08x %08x %08x)\n",
+			printf("Unexpected XHCI event TRB, skipping...  "
+				"(%08x %08x %08x %08x) expected %d got %d\n",
 				le32_to_cpu(event->generic.field[0]),
 				le32_to_cpu(event->generic.field[1]),
 				le32_to_cpu(event->generic.field[2]),
-				le32_to_cpu(event->generic.field[3]));
+				le32_to_cpu(event->generic.field[3]),
+				expected,
+				type);
 
 		xhci_acknowledge_event(ctrl);
 	} while (get_curr_time_ms < timeout_val);
@@ -572,7 +594,7 @@ static void reset_ep(struct usb_device *udev, int ep_index)
 // /*
 //  * Stops transfer processing for an endpoint and throws away all unprocessed
 //  * TRBs by setting the xHC's dequeue pointer to our enqueue pointer. The next
-//  * xhci_bulk_tx/xhci_ctrl_tx on this enpoint will add new transfers there and
+//  * xhci_bulk_tx/xhci_ctrl_tx on this endpoint will add new transfers there and
 //  * ring the doorbell, causing this endpoint to start working again.
 //  * (Careful: This will BUG() when there was no transfer in progress. Shouldn't
 //  * happen in practice for current uses and is too complicated to fix right now.)
@@ -649,6 +671,18 @@ static void record_transfer_result(struct usb_device *udev,
 	}
 }
 
+
+// static void dump_touchscreen_data(void* buffer, size_t max_size){
+//     size_t cnt = 0;
+//     char* the_buffer = (char*) buffer;
+//     printf("--------- Touchscreen Packet ---------\n");
+//     while(cnt < max_size){
+//         printf("Byte %02d 0x%02x\n", cnt, (uint8_t) the_buffer[cnt++]);
+//     }
+
+// }
+
+
 // /**** Bulk and Control transfer methods ****/
 // /**
 //  * Queues up the BULK Request
@@ -670,7 +704,6 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 	u32 length_field = 0;
 	struct xhci_ctrl *ctrl = xhci_get_ctrl(udev);
 	int slot_id = udev->slot_id;
-	// ZF_LOGE("slot id is %d", slot_id);
 	int ep_index;
 	struct xhci_virt_device *virt_dev;
 	struct xhci_ep_ctx *ep_ctx;
@@ -688,43 +721,36 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 	int available_length;
 
 	// ZF_LOGE("dev=%p, pipe=%lx, buffer=%p, length=%d\n",
-	// 	udev, pipe, buffer, length);
+		// udev, pipe, buffer, length);
 
 	available_length = length;
+	// ZF_LOGE("Pipe is %d", pipe);
 	ep_index = usb_pipe_ep_index(pipe);
-	ZF_LOGE("ep_index is %d", ep_index);
+	// ZF_LOGE("ep_index is %d", ep_index);
 	virt_dev = ctrl->devs[slot_id];
+	// ZF_LOGE("Length is %d", length);
 
 	// xhci_inval_cache((uintptr_t)virt_dev->out_ctx->bytes,
 	// 		 virt_dev->out_ctx->size);
 
-	uint32_t tmp_index = 0;
-	// struct xhci_ep_ctx tmp;
-	// while(1) {
-	// 	tmp = *(struct xhci_ep_ctx*)(virt_dev->out_ctx->bytes +
-	// 	(tmp_index * CTX_SIZE(xhci_readl(&ctrl->hccr->cr_hccparams))));
-	// 	ZF_LOGE("Type is %d index is %d", (tmp.ep_info2 & 0x38) >> 3, tmp_index);
-	// 	tmp_index += 1;
-	// 	if((tmp.ep_info2 & 0x38) == 0x18)
-	// 		break;
-	// }
-	// ZF_LOGE("Interrupt type ep is at index %d", index);
-
-	for(int i=0; i < 25; i++){
-		ep_ctx = xhci_get_ep_ctx(ctrl, virt_dev->out_ctx, i);
-		ZF_LOGE("Ep %d type is %d", i + 1, (ep_ctx->ep_info2 & 0x38) >> 3); // check our irq typ
-	}
-
+	struct xhci_slot_ctx* slot_ctx = xhci_get_slot_ctx(ctrl, virt_dev->out_ctx);
+	// print_slot_ctx(slot_ctx);
 	ep_ctx = xhci_get_ep_ctx(ctrl, virt_dev->out_ctx, ep_index);
-	ZF_LOGE("CHECKING IRQ EP!!!: Ep type is %d", (ep_ctx->ep_info2 & 0x38)); // check our irq typ
 
+
+	// print_endpoint_ctx(ep_ctx);
 	/*
 	 * If the endpoint was halted due to a prior error, resume it before
 	 * the next transfer. It is the responsibility of the upper layer to
 	 * have dealt with whatever caused the error.
 	 */
-	if ((le32_to_cpu(ep_ctx->ep_info) & EP_STATE_MASK) == EP_STATE_HALTED)
+	if ((le32_to_cpu(ep_ctx->ep_info) & EP_STATE_MASK) == EP_STATE_HALTED) {
+		ZF_LOGF("Endpoint is halted...");
 		reset_ep(udev, ep_index);
+	}
+
+	// ZF_LOGE("Try to reset the ep? What do we have to lose");
+	// reset_ep(udev, ep_index);
 
 	ring = virt_dev->eps[ep_index].ring;
 	/*
@@ -737,6 +763,7 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 			(lower_32_bits(buf_64) & (TRB_MAX_BUFF_SIZE - 1));
 	trb_buff_len = running_total;
 	running_total &= TRB_MAX_BUFF_SIZE - 1;
+	// ZF_LOGE("Running total is %d", running_total);
 
 	/*
 	 * If there's some data on this 64KB chunk, or we have to send a
@@ -750,6 +777,7 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 		num_trbs++;
 		running_total += TRB_MAX_BUFF_SIZE;
 	}
+	// ZF_LOGE("num trbs is %d and running total is %d", num_trbs, running_total);
 
 	/*
 	 * XXX: Calling routine prepare_ring() called in place of
@@ -774,6 +802,7 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 
 	running_total = 0;
 	maxpacketsize = usb_maxpacket(udev, pipe);
+	// ZF_LOGE("maxpacket size is %d", maxpacketsize);
 
 	/* How much data is in the first TRB? */
 	/*
@@ -812,7 +841,7 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 		if (num_trbs > 1) {
 			field |= TRB_CHAIN;
 		} else {
-			ZF_LOGE("We've got an IOC bit set here....");
+			// ZF_LOGE("Setting IoC...");
 			field |= TRB_IOC;
 			more_trbs_coming = false;
 		}
@@ -826,6 +855,8 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 					      length, maxpacketsize,
 					      more_trbs_coming);
 
+		// ZF_LOGE("Remainder is %d", remainder);
+
 		length_field = (TRB_LEN(trb_buff_len) |
 				TRB_TD_SIZE(remainder) |
 				TRB_INTR_TARGET(0)); // always targets 0...
@@ -835,23 +866,29 @@ int xhci_bulk_tx(struct usb_device *udev, unsigned long pipe,
 		trb_fields[2] = length_field;
 		trb_fields[3] = field | TRB_TYPE(TRB_NORMAL);
 
+		// ZF_LOGE("Queue the IRQ packet");
+		// ZF_LOGE("trb_fields are 0x%x / 0x%x / 0x%x / 0x%x\n", trb_fields[0], trb_fields[1], trb_fields[2], trb_fields[3]);
 		last_transfer_trb_addr = queue_trb(ctrl, ring, (num_trbs > 1), trb_fields);
+		// ZF_LOGE("Last transfer trb addr is %p", last_transfer_trb_addr);
 
 		--num_trbs;
 
 		running_total += trb_buff_len;
+		// ZF_LOGE("running total is %d witha  length of %d", running_total, length);
 
 		/* Calculate length for next transfer */
 		addr += trb_buff_len;
 		trb_buff_len = min((length - running_total), TRB_MAX_BUFF_SIZE);
 	} while (running_total < length);
 
+	// ZF_LOGE("Bulk give back ");
 	giveback_first_trb(udev, ep_index, start_cycle, start_trb);
 
 again:
 	event = xhci_wait_for_event(ctrl, TRB_TRANSFER);
 	if (!event) {
-		// ZF_LOGE("XHCI bulk transfer timed out, aborting...\n");
+
+		ZF_LOGD("XHCI bulk transfer timed out, aborting...\n");
 		abort_td(udev, ep_index);
 		udev->status = USB_ST_NAK_REC;  /* closest thing to a timeout */
 		udev->act_len = 0;
@@ -870,7 +907,6 @@ again:
 
 	record_transfer_result(udev, event, available_length);
 	xhci_acknowledge_event(ctrl);
-	// xhci_inval_cache((uintptr_t)buffer, length);
 	xhci_dma_unmap(ctrl, buf_64, length);
 
 	return (udev->status != USB_ST_NOT_PROC) ? 0 : -1;
@@ -1020,7 +1056,7 @@ int xhci_ctrl_tx(struct usb_device *udev, unsigned long pipe,
 		if (req->requesttype & USB_DIR_IN)
 			field |= TRB_DIR_IN;
 	// ZF_LOGE("DMA MAP for ctrl buffer ctrl is at %p buffer at %p and length is 0x%d", ctrl, buffer, length);
-		buf_64 = xhci_dma_map(ctrl, buffer, length);
+		buf_64 = (dma_addr_t)xhci_dma_map(ctrl, buffer, length);
 
 		trb_fields[0] = lower_32_bits(buf_64);
 		trb_fields[1] = upper_32_bits(buf_64);

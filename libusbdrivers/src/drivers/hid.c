@@ -97,10 +97,12 @@ usb_hid_config_cb(void *token, int cfg, int iface, struct anon_desc *desc)
 		break;
 	case INTERFACE:
 		idesc = (struct iface_desc *)desc;
-		if (idesc->bInterfaceSubClass == 1) {
+		if (idesc->bInterfaceSubClass == 1) { //only supports boot protocol devs....
+		if(idesc->bInterfaceNumber == 0){
 			hid->subclass = idesc->bInterfaceSubClass;
 			hid->protocol = idesc->bInterfaceProtocol;
 			hid->iface = idesc->bInterfaceNumber;
+		}
 		}
 		break;
 	case HID:
@@ -150,7 +152,7 @@ struct usb_hid_device *usb_hid_alloc(struct usb_dev *udev)
 
 	class = usbdev_get_class(udev);
 	if (class != USB_CLASS_HID) {
-		ZF_LOGD("Not a HID device(%d)\n", class);
+		ZF_LOGF("Not a HID device(%d)\n", class);
 		usb_free(hid);
 		return NULL;
 	}
@@ -162,16 +164,18 @@ struct usb_hid_device *usb_hid_alloc(struct usb_dev *udev)
 		ZF_LOGF("Out of DMA memory\n");
 	}
 
+
 	/* Fill in the request */
 	xact.type = PID_SETUP;
 	req = xact_get_vaddr(&xact);
 	*req = __set_configuration_req(hid->config);
 
-	/* Send the request to the host */
 	err = usbdev_schedule_xact(udev, udev->ep_ctrl, &xact, 1, NULL, NULL);
 	if (err) {
 		ZF_LOGF("Transaction error\n");
 	}
+	/* Send the request to the host */
+
 
 	usb_destroy_xact(udev->dman, &xact, 1);
 

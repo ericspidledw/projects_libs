@@ -145,20 +145,25 @@ static int kbd_update_ind(struct usb_kbd_device *kbd)
 static int kbd_update_repeat_rate(struct usb_kbd_device *kbd)
 {
 	ZF_LOGD("Changing rate to %dms\n", kbd->repeat_rate * 4);
-
 	return usb_hid_set_idle(kbd->hid, kbd->repeat_rate);
 }
 
 static int
 kbd_irq_handler(void *token, enum usb_xact_status stat, int bytes_remaining)
 {
-	struct usb_kbd_device *kbd = (struct usb_kbd_device *)token;
+
+	struct usb_dev *udev;
+	struct usb_kbd_device *kbd;
+	udev = (usb_dev_t*) token;
+	kbd = (struct usb_kbd_device *)udev->dev_data;
+
 	uint8_t afn;
 	uint8_t key;
 	int new_rate = -1;
 	char c;
 	int len;
-
+	if(stat != 0x0)
+		stat = XACTSTAT_ERROR;
 	/* Check the status */
 	if (stat != XACTSTAT_SUCCESS) {
 		ZF_LOGD("Received unsuccessful IRQ\n");
@@ -169,6 +174,7 @@ kbd_irq_handler(void *token, enum usb_xact_status stat, int bytes_remaining)
 		ZF_LOGD("Short read on INT packet (%d)\n", len);
 		return 1;
 	}
+#define KBDIRQ_DEBUG
 #if defined(KBDIRQ_DEBUG)
 	{
 		int i;
@@ -260,9 +266,25 @@ kbd_irq_handler(void *token, enum usb_xact_status stat, int bytes_remaining)
 	}
 
 	usbdev_schedule_xact(kbd->udev, kbd->ep_int, &kbd->int_xact, 1,
-			     &kbd_irq_handler, kbd);
+			     &kbd_irq_handler, udev);
 
 	return 1;
+}
+static void dump_keyboard(void* buf, int len){
+	ZF_LOGE("Dump keyboard transaction");
+	ZF_LOGE("lenght is %d", len);
+	for(int i =0; i < len; i++){
+		ZF_LOGE("byte %d is 0x%x\n", i, ((char*)buf)[i]);
+	}
+}
+
+int kbd_poll(usb_dev_t *usb_dev)
+{
+	// ZF_LOGE("USB dev is %p", usb_dev);
+	struct usb_kbd_device* kbd = (struct usb_kbd_device*)usb_dev->dev_data;
+	// ZF_LOGE("KBD in poll is %p", kbd);
+	int err = usbdev_schedule_xact(kbd->udev, kbd->ep_int, &kbd->int_xact, 1,
+			     &kbd_irq_handler, usb_dev);
 }
 
 static ssize_t
@@ -286,6 +308,7 @@ kbd_read(ps_chardevice_t *d, void *vdata, size_t bytes,
 	return i;
 }
 
+
 int usb_kbd_driver_bind(usb_dev_t *usb_dev, struct ps_chardevice *cdev)
 {
 	struct usb_kbd_device *kbd;
@@ -295,6 +318,7 @@ int usb_kbd_driver_bind(usb_dev_t *usb_dev, struct ps_chardevice *cdev)
 	if (!kbd) {
 		ZF_LOGF("Out of memory\n");
 	}
+	ZF_LOGE("kbd in bind is %p", kbd);
 
 	usb_dev->dev_data = (struct udev_priv*)kbd;
 	kbd->udev = usb_dev;
@@ -324,7 +348,7 @@ int usb_kbd_driver_bind(usb_dev_t *usb_dev, struct ps_chardevice *cdev)
 	cdev->read = kbd_read;
 
 	/* Initialise LEDS */
-	kbd_update_ind(kbd);
+	// kbd_update_ind(kbd);
 
 	/* Initialise IRQs */
 	if (kbd->ep_int->dir == EP_DIR_IN) {
@@ -343,13 +367,14 @@ int usb_kbd_driver_bind(usb_dev_t *usb_dev, struct ps_chardevice *cdev)
 	kbd->new_keys = xact_get_vaddr(&kbd->int_xact);
 
 #if defined(KBD_ENABLE_IRQS)
-	ZF_LOGD("Scheduling IRQS\n");
-	usbdev_schedule_xact(usb_dev, kbd->ep_int, &kbd->int_xact, 1,
-			     &kbd_irq_handler, kbd);
+	// ZF_LOGE("Scheduling IRQS\n");
+	// int count = 0;
+	// usbdev_schedule_xact(usb_dev, kbd->ep_int, &kbd->int_xact, 1,
+	// 	&kbd_irq_handler, usb_dev);
 #else
 	(void)kbd_irq_handler;
 #endif
-	ZF_LOGD("Successfully initialised\n");
+	ZF_LOGE("Successfully initialised\n");
 
 	return 0;
 }

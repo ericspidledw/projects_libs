@@ -11,5 +11,6 @@
 
 /* USB keyboard */
 int usb_kbd_driver_bind(usb_dev_t *usb_dev, struct ps_chardevice *cdev);
+int kbd_poll(usb_dev_t *usb_dev);
 
 #endif /* _USB_DRIVERS_USBKBD_H_ */
